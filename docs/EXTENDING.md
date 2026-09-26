@@ -103,5 +103,11 @@ async def weather(city: str, **_) -> str:
 Import the module somewhere at startup, or expose a `ToolSpec` (or list of them) through the `alfred.browser_tools` entry point.
 Tools that aren't read-only go through the Jev risk check automatically.
 
-**Models:** `OPENROUTER_MODELS=model-a:free,model-b:free` (tried in order). The models must support tool calling.
+**Models and providers:**
+- `LLM_PROVIDERS=gemini,openrouter` sets the provider order. A provider with no API key is skipped.
+- `GEMINI_MODELS=gemini-3.8-flash,...` pins Gemini models. If it's empty, the newest Flash models are picked automatically.
+- `GEMINI_REASONING_EFFORT=low|medium|high|none` sets how much the Gemini model "thinks" per step.
+- `OPENROUTER_MODELS=model-a:free,...` sets the OpenRouter models, tried in order.
+- All models must support tool calling.
+- To add another OpenAI-compatible provider, subclass `OpenAICompatClient` in `browser_agent/llm.py` and add it to `build_llm`.
 **Deny tools:** `BROWSER_TOOL_DENYLIST=playwright__browser_run_code_unsafe,...`

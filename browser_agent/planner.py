@@ -8,7 +8,7 @@ import re
 
 from browser_agent import prompts
 from browser_agent.decisions import JevDecider
-from browser_agent.llm import DailyQuotaExceeded, OpenRouterClient
+from browser_agent.llm import DailyQuotaExceeded
 
 log = logging.getLogger(__name__)
 
@@ -31,7 +31,7 @@ def parse_subtasks(text: str) -> list[str]:
 
 
 class Planner:
-    def __init__(self, llm: OpenRouterClient, decider: JevDecider, model: str | None = None) -> None:
+    def __init__(self, llm, decider: JevDecider, model: str | None = None) -> None:
         self.llm, self.decider, self.model = llm, decider, model
 
     async def needs_plan(self, goal: str) -> tuple[bool, str]:

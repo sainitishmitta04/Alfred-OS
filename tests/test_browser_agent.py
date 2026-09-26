@@ -310,3 +310,68 @@ async def test_daily_quota_fails_fast():
     assert comp.models_called == ["a:free"]
     result = await agent_with(ScriptedLLM(DailyQuotaExceeded("quota")), FakeDecider(multi=0.9)).run("a then b", make_ctx()[0])
     assert not result.success and "quota" in result.text
+
+
+# --- multi-provider -------------------------------------------------------------------------------
+async def test_router_falls_back_to_next_provider():
+    from browser_agent.llm import GeminiClient, LLMRouter
+    gem = FakeCompletions({"gemini-x": RuntimeError("429 RESOURCE_EXHAUSTED GenerateRequestsPerDayPerProjectPerModel-FreeTier")})
+    orc = FakeCompletions({"a:free": completion("from openrouter")})
+    gemini = GeminiClient("g", ["gemini-x"], backoff_s=0.01, client=SimpleNamespace(chat=SimpleNamespace(completions=gem)))
+    openrouter = OpenRouterClient("o", ["a:free"], client=SimpleNamespace(chat=SimpleNamespace(completions=orc)))
+    router = LLMRouter([gemini, openrouter])
+    r = await router.chat([])
+    assert r.content == "from openrouter" and r.model.startswith("openrouter:")
+    assert gem.models_called == ["gemini-x"]  # per-day quota -> no retry rounds on that model
+    await router.chat([])
+    assert gem.models_called == ["gemini-x"]  # still cooling down, skipped straight to fallback
+
+
+async def test_router_all_quota_raises_daily():
+    from browser_agent.llm import DailyQuotaExceeded, GeminiClient, LLMRouter
+    gem = FakeCompletions({"g1": RuntimeError("RequestsPerDay exceeded")})
+    orc = FakeCompletions({"a:free": RuntimeError("free-models-per-day")})
+    router = LLMRouter([GeminiClient("g", ["g1"], backoff_s=0.01, client=SimpleNamespace(chat=SimpleNamespace(completions=gem))),
+                        OpenRouterClient("o", ["a:free"], client=SimpleNamespace(chat=SimpleNamespace(completions=orc)))])
+    with pytest.raises(DailyQuotaExceeded):
+        await router.chat([])
+
+
+async def test_gemini_autopicks_newest_flash():
+    from browser_agent.llm import GeminiClient
+    ids = ["models/gemini-2.5-flash", "models/gemini-2.5-flash-lite", "models/gemini-3-flash-preview",
+           "models/gemini-2.5-flash-image", "models/gemini-2.5-pro", "models/text-embedding-004", "models/gemini-2.0-flash-001"]
+    models = SimpleNamespace(list=lambda: _aret(SimpleNamespace(data=[SimpleNamespace(id=i) for i in ids])))
+    g = GeminiClient("k", None, client=SimpleNamespace(models=models, chat=None))
+    assert await g.validate_models() == ["gemini-3-flash-preview", "gemini-2.5-flash", "gemini-2.5-flash-lite"]
+
+
+async def _aret(v):
+    return v
+
+
+def test_build_llm_skips_providers_without_keys():
+    from browser_agent.llm import build_llm
+    s = BrowserSettings(gemini_api_key="g", openrouter_api_key="")
+    router = build_llm(s)
+    assert [p.provider for p in router.providers] == ["gemini"]
+    with pytest.raises(ValueError):
+        build_llm(BrowserSettings(gemini_api_key="", openrouter_api_key=""))
+
+
+def test_provider_extra_fields_round_trip():
+    tc = SimpleNamespace(id="t1", function=SimpleNamespace(name="nav", arguments="{}"),
+                         model_extra={"extra_content": {"google": {"thought_signature": "SIG"}}})
+    result = OpenRouterClient._parse(completion(tool_calls=[tc]), "m")
+    msg = result.assistant_message()
+    assert msg["tool_calls"][0]["extra_content"]["google"]["thought_signature"] == "SIG"
+
+
+async def test_pre_approved_request_skips_first_risky_prompt_only():
+    llm = ScriptedLLM(calls(("browser_click", {"target": "Submit"})), calls(("browser_click", {"target": "Pay now"})))
+    agent = agent_with(llm, FakeDecider(risky=0.9))
+    steps = []
+    ctx = AgentContext("s1", "browser", "t", None, lambda a, d=None, s=True: steps.append(a), approved=True)
+    with pytest.raises(ConfirmationRequired) as pause:
+        await agent.run("submit and pay", ctx)
+    assert "risk_pre_approved" in steps and "Pay now" in pause.value.prompt
