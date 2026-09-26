@@ -41,7 +41,7 @@ async function start() {
   const chunks = [];
   rec = new MediaRecorder(s, { mimeType: 'audio/webm;codecs=opus' });
   rec.ondataavailable = (e) => e.data.size && chunks.push(e.data);
-  Object.assign(rec, { chunks, stream: s, stopMeter: meter(analyser) });
+  Object.assign(rec, { chunks, stopMeter: meter(analyser) }); // rec.stream (read-only, built in) is `s`
   rec.start(100);
   startedAt = performance.now();
 }
