@@ -19,7 +19,16 @@ from orchestrator.db import Database
 from orchestrator.engine import Orchestrator
 from orchestrator.events import EventBus
 from orchestrator.router import JevClient, JevVerifier, build_router
-from orchestrator.schemas import ConfirmAnswer, ConfirmRequest, OrchestratorResponse, TaskAccepted, TranscriptRequest
+from orchestrator.agents.base import AgentContext, AgentResult
+from orchestrator.schemas import (
+    ConfirmAnswer,
+    ConfirmRequest,
+    DesktopRunRequest,
+    DesktopRunResponse,
+    OrchestratorResponse,
+    TaskAccepted,
+    TranscriptRequest,
+)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("alfred")
@@ -90,6 +99,34 @@ def create_app(orchestrator: Orchestrator | None = None, settings: Settings | No
     async def agents() -> list[dict]:
         return [{"name": a.name, "description": a.description, "always_confirm": a.always_confirm,
                  "timeout_s": a.timeout_s or engine().settings.agent_timeout_s} for a in engine().registry]
+
+
+    @app.post("/agents/desktop/run", response_model=DesktopRunResponse)
+    async def desktop_run(req: DesktopRunRequest) -> DesktopRunResponse:
+        """Run the desktop agent without transcript routing (no TypeSafe/Jev required)."""
+        agent = engine().registry.get("desktop")
+        if agent is None:
+            raise HTTPException(503, "desktop agent is not registered")
+        steps: list[dict] = []
+
+        def log_step(action: str, detail: str | None = None, success: bool | None = True) -> None:
+            steps.append({"action": action, "detail": detail, "success": success})
+
+        ctx = AgentContext(
+            session_id="desktop-direct",
+            agent="desktop",
+            transcript=req.command,
+            settings=engine().settings,
+            _log_step=log_step,
+        )
+        raw = await agent.run(req.command, ctx)
+        result = raw if isinstance(raw, AgentResult) else AgentResult(text=str(raw))
+        return DesktopRunResponse(
+            success=result.success,
+            summary=result.text,
+            steps=steps,
+            data=result.data,
+        )
 
     @app.post("/transcript", response_model=OrchestratorResponse, response_model_exclude_none=True)
     async def transcript(req: TranscriptRequest) -> dict:

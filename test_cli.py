@@ -30,7 +30,8 @@ def main() -> int:
         data = resp.json()
         print(json.dumps(data, indent=2))
 
-        if data.get("status") == "needs_confirmation":
+        # Agents can pause more than once (e.g. before each irreversible browser action).
+        while data.get("status") == "needs_confirmation":
             approved = args.yes or (not args.no and input(f"\n{data['response_text']} [y/N] ").strip().lower() in {"y", "yes"})
             data = client.post("/confirm", json={"session_id": data["session_id"], "approved": approved}).json()
             print(json.dumps(data, indent=2))

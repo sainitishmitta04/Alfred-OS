@@ -5,8 +5,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from orchestrator.agents import AgentRegistry, FunctionAgent
+from orchestrator.agents import AgentRegistry, AgentResult, FunctionAgent
 from orchestrator.agents.mocks import AGENTS
+from desktop_use.orchestrator_agent import DESKTOP_AGENT_DESCRIPTION
 from orchestrator.config import Settings
 from orchestrator.db import Database
 from orchestrator.engine import Orchestrator
@@ -60,9 +61,24 @@ def db() -> Database:
     return Database(":memory:")
 
 
+async def _stub_desktop_agent(goal: str, ctx) -> AgentResult:
+    """Fast stand-in for orchestrator tests (no Anthropic calls)."""
+    ctx.step("plan", goal)
+    return AgentResult(text=f"[TEST] Desktop agent handled: {goal}")
+
+
 @pytest.fixture
 def registry() -> AgentRegistry:
-    return AgentRegistry(AGENTS)
+    reg = AgentRegistry(AGENTS)
+    reg.register(
+        FunctionAgent(
+            "desktop",
+            DESKTOP_AGENT_DESCRIPTION,
+            _stub_desktop_agent,
+            timeout_s=120,
+        )
+    )
+    return reg
 
 
 @pytest.fixture

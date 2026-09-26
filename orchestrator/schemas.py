@@ -27,6 +27,19 @@ class TaskAccepted(BaseModel):
     status: str
 
 
+class DesktopRunRequest(BaseModel):
+    """Bypass routing: invoke the desktop agent directly (desktop team / integration tests)."""
+
+    command: str = Field(min_length=1, max_length=4000)
+
+
+class DesktopRunResponse(BaseModel):
+    success: bool
+    summary: str
+    steps: list[dict[str, Any]] = Field(default_factory=list)
+    data: dict[str, Any] = Field(default_factory=dict)
+
+
 class OrchestratorResponse(BaseModel):
     session_id: str
     status: str
