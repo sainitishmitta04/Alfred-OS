@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 
+from desktop_use.orchestrator_agent import DESKTOP_AGENT_DESCRIPTION, run_desktop_agent
 from orchestrator.agents.adapters import FunctionAgent
 from orchestrator.agents.base import AgentContext
 
@@ -16,13 +17,6 @@ async def run_browser_agent(goal: str, ctx: AgentContext) -> str:
     ctx.step("search", f"would search the web for: {goal}")
     await asyncio.sleep(0.5)
     return f"[MOCK] Browser agent would handle: {goal}"
-
-
-# MOCK — replace with real import (Person C: Desktop Agent, filesystem MCP + AppleScript tools)
-async def run_desktop_agent(goal: str, ctx: AgentContext) -> str:
-    ctx.step("plan", f"would perform file/app operation: {goal}")
-    await asyncio.sleep(0.3)
-    return f"[MOCK] Desktop agent would handle: {goal}"
 
 
 # MOCK — replace with real import (Person A: Knowledge Agent, Obsidian MCP)
@@ -44,8 +38,12 @@ AGENTS = [
                   "play/pause, brightness, locking the screen, opening a known app", run_direct_command),
     FunctionAgent("browser", "Requires live website interaction — web search, social media, "
                   "forms, looking things up or reading pages online", run_browser_agent),
-    FunctionAgent("desktop", "Requires local file read/search/write/move/delete, screenshots, "
-                  "or app-launching tied to file content", run_desktop_agent),
+    FunctionAgent(
+        "desktop",
+        DESKTOP_AGENT_DESCRIPTION,
+        run_desktop_agent,
+        timeout_s=120,
+    ),
     FunctionAgent("knowledge", "Refers to the user's notes, the Obsidian vault, or personal "
                   "knowledge base (reading, writing, or searching notes)", run_knowledge_agent),
 ]

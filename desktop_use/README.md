@@ -2,10 +2,13 @@
 
 FastAPI service that runs Alfred as a background tool-calling agent (Anthropic Haiku) for desktop chores without focus-stealing UI automation.
 
+When used with the Alfred orchestrator (`uvicorn orchestrator.main:app`), the **`desktop`** agent imports this
+package in-process via `desktop_use.orchestrator_agent` — you do not need this server unless you want the HTTP API.
+
 ## Setup
 
 ```bash
-cd desktop-use/backend
+cd desktop_use
 python3.11 -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
@@ -17,7 +20,7 @@ playwright install chromium
 ## Run
 
 ```bash
-uvicorn app.main:app --reload --host 127.0.0.1 --port 8787
+uv run uvicorn desktop_use.main:app --reload --host 127.0.0.1 --port 8787
 ```
 
 ## API

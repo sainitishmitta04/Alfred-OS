@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.tools.system_utils import SystemUtilsError
+from desktop_use.tools.system_utils import SystemUtilsError
 
 
 async def headless_web_scrape(
