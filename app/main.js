@@ -18,6 +18,11 @@ let pending = null;             // { session_id, card } while the orchestrator w
 let queue = Promise.resolve();  // one command at a time: the next waits for the last to finish
 
 const send = (type, data = {}) => win?.webContents.send('state', { type, ...data });
+// While a confirmation waits, keep its question on screen, so no take can answer a card the user can't see.
+function notice(type, data) {
+  if (!pending) return send(type, data);
+  send('confirm', { ...pending.card, note: [data.message || data.note, 'Say "yes" or "no".'].filter(Boolean).join(' ') });
+}
 const offline = (e) => e?.cause?.code === 'ECONNREFUSED' || /fetch failed/.test(e?.message || '');
 
 async function orch(route, body) {
@@ -92,16 +97,16 @@ function show(res, heard, stt, sttMs) {
   if (res.status === 'needs_confirmation') {
     pending = { session_id: res.session_id, card };
     const id = res.session_id;
-    setTimeout(() => { if (pending?.session_id === id) queue = queue.then(() => answer(false, 'No answer')); }, CONFIRM_TIMEOUT_MS);
+    setTimeout(() => { if (pending?.session_id === id) queue = queue.then(() => answer(false, 'No answer', id)); }, CONFIRM_TIMEOUT_MS);
     return send('confirm', card);
   }
   pending = null;
   send('result', card);
 }
 
-async function answer(approved, heard) {
+async function answer(approved, heard, sessionId) {
   const p = pending;
-  if (!p) return;
+  if (!p || (sessionId && p.session_id !== sessionId)) return; // a stale timeout never answers a newer question
   pending = null;
   send('thinking', { heard: `${p.card.heard} → ${heard || (approved ? 'Yes' : 'No')}` });
   try {
@@ -112,10 +117,10 @@ async function answer(approved, heard) {
 }
 
 async function handleTake(audio, mimeType, ms) {
-  if (ms < 300 || audio.length < 1000) return send('idle', { note: 'Too short' });
+  if (ms < 300 || audio.length < 1000) return notice('idle', { note: 'Too short' });
   let stt;
-  try { stt = resolveStt(process.env, sttChoice); } catch (e) { return send('error', { message: e.message, hint: 'Fix it in .env' }); }
-  if (!stt.key) return send('error', { message: `No ${PROVIDERS[stt.provider].keyEnv} in .env`, hint: 'Add it and restart, or pick another provider in the tray' });
+  try { stt = resolveStt(process.env, sttChoice); } catch (e) { return notice('error', { message: e.message, hint: 'Fix it in .env' }); }
+  if (!stt.key) return notice('error', { message: `No ${PROVIDERS[stt.provider].keyEnv} in .env`, hint: 'Add it and restart, or pick another provider in the tray' });
 
   send('transcribing', { stt: stt.label });
   const t0 = Date.now();
@@ -126,10 +131,10 @@ async function handleTake(audio, mimeType, ms) {
       baseUrl: process.env.DEEPGRAM_BASE_URL || undefined,
     });
   } catch (e) {
-    return send('error', { message: `Speech-to-text failed: ${e.message}`, hint: 'Check the key, or switch provider in the tray' });
+    return notice('error', { message: `Speech-to-text failed: ${e.message}`, hint: 'Check the key, or switch provider in the tray' });
   }
   const sttMs = Date.now() - t0;
-  if (!text) return send('idle', { note: "Didn't catch that" });
+  if (!text) return notice('idle', { note: "Didn't catch that" });
 
   if (pending) { // this take answers the orchestrator's question
     const approved = parseYesNo(text);
@@ -156,6 +161,8 @@ ipcMain.handle('take', (_e, { audio, mimeType, ms }) => {
 });
 ipcMain.handle('answer', (_e, approved) => { queue = queue.then(() => answer(approved)); return queue; });
 ipcMain.on('interactive', (_e, on) => win?.setIgnoreMouseEvents(!on, { forward: true }));
+// The page couldn't open the mic: stop recording here too, so Esc is released and the next tap starts fresh.
+ipcMain.on('stopped', () => { recording = false; globalShortcut.unregister('Escape'); });
 
 app.whenReady().then(() => {
   app.dock?.hide(); // menu-bar app

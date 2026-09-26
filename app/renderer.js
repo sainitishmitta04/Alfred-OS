@@ -10,46 +10,58 @@ const ICONS = {
   neutral: '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="4"/></svg>',
 };
 
-let rec = null, stream = null, ctx = null, raf = 0, startedAt = 0, hideTimer = 0;
+let rec = null, ctx = null, startedAt = 0, hideTimer = 0;
+let gen = 0;      // bumps on every hotkey on/off, so a start() still waiting for the mic knows it was overtaken
+let live = false; // recording now: status updates about the previous take must not repaint the pill
+
+// Pill updates about a take in flight; skipped while a new recording owns the pill.
+const status = (state, text) => { if (!live) setPill(state, text); };
 
 // ---------- recording ----------
-alfred.onRecord(({ on, cancel }) => (on ? start() : stop(cancel)));
+alfred.onRecord(({ on, cancel }) => { gen++; on ? start() : stop(cancel); });
 
 async function start() {
-  clearCard();
+  const my = gen;
+  live = true;
+  if (!card.classList.contains('confirm')) clearCard(); // a pending question stays on screen
   setPill('listening', '⌥Space to send · Esc to cancel');
+  let s;
   try {
-    stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+    s = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
   } catch {
+    if (my !== gen) return;
+    live = false;
+    alfred.stopped(); // main still thinks we're recording and holds Esc
     setPill('idle');
     return render({ kind: 'error', answer: 'Microphone blocked', hint: 'Allow Electron in System Settings → Privacy & Security → Microphone.' });
   }
   ctx ||= new AudioContext();
   await ctx.resume();
+  // Tapped again while the mic was opening: release it rather than record with nobody tracking it.
+  if (my !== gen) return s.getTracks().forEach((t) => t.stop());
+
   const analyser = ctx.createAnalyser();
   analyser.fftSize = 512;
-  ctx.createMediaStreamSource(stream).connect(analyser);
-
+  ctx.createMediaStreamSource(s).connect(analyser);
   const chunks = [];
-  rec = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' });
+  rec = new MediaRecorder(s, { mimeType: 'audio/webm;codecs=opus' });
   rec.ondataavailable = (e) => e.data.size && chunks.push(e.data);
-  rec.chunks = chunks;
+  Object.assign(rec, { chunks, stream: s, stopMeter: meter(analyser) });
   rec.start(100);
   startedAt = performance.now();
-  meter(analyser);
 }
 
 function stop(cancelled) {
-  if (!rec) return;
-  const r = rec, s = stream, ms = performance.now() - startedAt;
+  live = false;
+  if (!rec) return setPill('idle'); // stopped before the mic opened; start() releases it
+  const r = rec, ms = performance.now() - startedAt;
   rec = null;
   setTimeout(() => {
     r.onstop = async () => {
-      s.getTracks().forEach((t) => t.stop()); // mic indicator off
-      cancelAnimationFrame(raf);
-      bars.forEach((b) => (b.style.transform = 'scaleY(0.15)'));
-      if (cancelled) return setPill('idle');
-      setPill('busy', 'Sending…');
+      r.stream.getTracks().forEach((t) => t.stop()); // mic indicator off
+      r.stopMeter();
+      if (cancelled) return status('idle');
+      status('busy', 'Sending…');
       const blob = new Blob(r.chunks, { type: 'audio/webm' });
       await alfred.take(await blob.arrayBuffer(), 'audio/webm', ms);
     };
@@ -61,7 +73,7 @@ function stop(cancelled) {
 function meter(analyser) {
   const buf = new Uint8Array(analyser.fftSize);
   const hist = new Array(bars.length).fill(0);
-  let frame = 0;
+  let frame = 0, raf = 0;
   const tick = () => {
     if (frame++ % 3 === 0) {
       analyser.getByteTimeDomainData(buf);
@@ -74,31 +86,35 @@ function meter(analyser) {
     raf = requestAnimationFrame(tick);
   };
   tick();
+  return () => { // each recording stops only its own loop
+    cancelAnimationFrame(raf);
+    if (!live) bars.forEach((b) => (b.style.transform = 'scaleY(0.15)'));
+  };
 }
 
 // ---------- states from main ----------
 alfred.onState((s) => {
   switch (s.type) {
-    case 'transcribing': return setPill('busy', `Transcribing · ${s.stt}`);
+    case 'transcribing': return status('busy', `Transcribing · ${s.stt}`);
     case 'thinking':
-      setPill('busy', 'Thinking…');
+      status('busy', 'Thinking…');
       return render({ heard: s.heard, chips: s.sttMs ? [sttChip(s)] : [], skeleton: true });
     case 'result':
-      setPill('idle');
+      status('idle');
       render({ kind: s.status === 'failed' ? 'error' : '', heard: s.heard, answer: s.response_text, steps: s.steps, chips: chips(s) });
       return autoHide(12000);
     case 'confirm':
-      setPill('idle');
+      status('idle');
       return render({
         kind: 'confirm', heard: s.heard, answer: s.response_text, steps: s.steps, chips: chips(s), actions: true,
         hint: s.note || 'Or tap ⌥Space and say "yes" or "no".',
       });
     case 'error':
-      setPill('idle');
+      status('idle');
       render({ kind: 'error', heard: s.heard, answer: s.message, hint: s.hint });
       return autoHide(15000);
     case 'idle':
-      setPill('idle');
+      status('idle');
       if (s.note) { render({ answer: s.note }); autoHide(2500); }
   }
 });
