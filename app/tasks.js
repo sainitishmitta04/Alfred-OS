@@ -53,7 +53,7 @@ function row(t) {
   const body = el('span', 'task-main');
   body.append(el('span', 'task-title', t.transcript || '…'));
   const last = t.steps?.[t.steps.length - 1];
-  const sub = state === 'waiting' ? firstLine(t.response_text) : FINAL.has(t.status) ? firstLine(t.response_text)
+  const sub = state === 'waiting' || state === 'expired' || FINAL.has(t.status) ? firstLine(t.response_text)
     : last ? `${stepLabel(last.action)}${last.detail ? ` — ${last.detail}` : ''}` : 'Starting…';
   body.append(el('span', 'task-sub', sub));
   const meta = el('span', 'task-meta');
