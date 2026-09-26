@@ -1,0 +1,21 @@
+{
+  "_comment": "Any MCP server listed here is started with the Browser Agent; its tools appear as <server>__<tool>. Use ${VAR} for env values, enabled_if_env to make a server optional, args_if_env for conditional flags.",
+  "servers": {
+    "playwright": {
+      "command": "npx",
+      "args": ["-y", "@playwright/mcp@0.0.82", "--isolated", "--output-dir", "${ALFRED_TMP}/playwright"],
+      "args_if_env": {
+        "BROWSER_HEADLESS=true": ["--headless"],
+        "PLAYWRIGHT_EXECUTABLE": ["--executable-path", "${PLAYWRIGHT_EXECUTABLE}"],
+        "BROWSER_NO_SANDBOX=true": ["--no-sandbox"]
+      },
+      "startup_timeout_s": 90
+    },
+    "brave": {
+      "enabled_if_env": "BRAVE_API_KEY",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-brave-search"],
+      "env": {"BRAVE_API_KEY": "${BRAVE_API_KEY}"}
+    }
+  }
+}
