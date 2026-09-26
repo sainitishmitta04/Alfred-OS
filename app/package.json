@@ -1,0 +1,14 @@
+{
+  "name": "alfred-voice",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Alfred OS voice input: hotkey, speech-to-text, and the overlay that talks to the orchestrator",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test test/"
+  },
+  "devDependencies": {
+    "electron": "^44.4.5"
+  }
+}
