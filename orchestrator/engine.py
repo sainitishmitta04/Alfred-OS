@@ -12,7 +12,7 @@ from collections import defaultdict
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from orchestrator.agents.base import AgentContext, AgentResult
+from orchestrator.agents.base import AgentContext, AgentResult, ConfirmationRequired
 from orchestrator.agents.registry import AgentRegistry
 from orchestrator.config import Settings
 from orchestrator.db import Database
@@ -27,6 +27,7 @@ Hook = Callable[..., Any | Awaitable[Any]]
 FALLBACK_ERROR = "Sorry, something went wrong while handling that. Please try again."
 FALLBACK_TIMEOUT = "Sorry, that took too long, so I stopped. Please try again."
 ENGINE = "orchestrator"
+_FRESH = object()  # sentinel: dispatch a new run rather than resuming a paused one
 
 
 class Orchestrator:
@@ -37,6 +38,8 @@ class Orchestrator:
         self.verifier = verifier
         self._hooks: dict[str, list[Hook]] = defaultdict(list)
         self._confirm_locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
+        # session_id -> agent state for tasks paused mid-run by ConfirmationRequired
+        self._paused: dict[str, Any] = {}
 
     # --- extension points -------------------------------------------------------------------------
     def add_hook(self, event: str, fn: Hook) -> Hook:
@@ -132,16 +135,22 @@ class Orchestrator:
                 return self._response(session_id, detail=f"session is {session['status']}, nothing to confirm")
 
             start = time.perf_counter()
+            paused = self._paused.pop(session_id, _FRESH)
             self.db.update_session(session_id, confirmed=approved)
             self._step(session_id, ENGINE, "confirmation_received", "approved" if approved else "declined", approved)
             if not approved:
+                if paused is not _FRESH and (agent := self.registry.get(session["route"])):
+                    try:
+                        await agent.cancel(paused)
+                    except Exception as exc:
+                        self._error(session_id, f"{agent.name}.cancel failed: {exc}", exc)
                 self._status(session_id, "cancelled", response_text="Okay, I won't do that.", latency_ms=0)
                 return self._response(session_id)
 
             state = {"session_id": session_id, "transcript": session["transcript"],
                      "goal": session["goal"] or session["transcript"], "route": session["route"]}
             try:
-                return await self._dispatch(session_id, state, start)
+                return await self._dispatch(session_id, state, start, resume_state=paused)
             except Exception as exc:
                 return await self._fail(session_id, state, start, FALLBACK_ERROR, exc)
             finally:
@@ -158,8 +167,11 @@ class Orchestrator:
         if needs_confirmation:
             self._step(session_id, ENGINE, "destructive_check", "flagged as destructive", None)
 
-    async def _dispatch(self, session_id: str, state: dict[str, Any], start: float) -> dict[str, Any]:
-        await self._run_hooks("before_dispatch", state)
+    async def _dispatch(self, session_id: str, state: dict[str, Any], start: float,
+                        resume_state: Any = _FRESH) -> dict[str, Any]:
+        resuming = resume_state is not _FRESH
+        if not resuming:
+            await self._run_hooks("before_dispatch", state)
         route = state.get("route") or state["decision"].route
         agent = self.registry.get(route)
         if agent is None:
@@ -167,14 +179,22 @@ class Orchestrator:
 
         goal = state["goal"]
         self.db.update_session(session_id, goal=goal)
-        self._step(session_id, route, "dispatch", goal)
+        self._step(session_id, route, "resume" if resuming else "dispatch", goal)
         ctx = AgentContext(session_id=session_id, agent=route, transcript=state["transcript"], settings=self.settings,
                            _log_step=lambda action, detail=None, success=True: self._step(session_id, route, action, detail, success))
 
         timeout = agent.timeout_s or self.settings.agent_timeout_s
         agent_start = time.perf_counter()
         try:
-            raw = await asyncio.wait_for(agent.run(goal, ctx), timeout=timeout)
+            call = agent.resume(resume_state, ctx) if resuming else agent.run(goal, ctx)
+            raw = await asyncio.wait_for(call, timeout=timeout)
+        except ConfirmationRequired as pause:
+            self._paused[session_id] = pause.state
+            self._step(session_id, route, "confirmation_requested", pause.prompt, None)
+            self._status(session_id, "needs_confirmation", response_text=pause.prompt, is_destructive=True,
+                         agent_latency_ms=int((time.perf_counter() - agent_start) * 1000),
+                         latency_ms=int((time.perf_counter() - start) * 1000))
+            return self._response(session_id, proposed_action=pause.prompt)
         except asyncio.TimeoutError as exc:
             self.db.update_session(session_id, agent_latency_ms=int((time.perf_counter() - agent_start) * 1000))
             return await self._fail(session_id, state, start, FALLBACK_TIMEOUT, exc, f"{route} agent timed out after {timeout}s")
