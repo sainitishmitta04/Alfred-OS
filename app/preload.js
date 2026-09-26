@@ -6,4 +6,5 @@ contextBridge.exposeInMainWorld('alfred', {
   take: (audio, mimeType, ms) => ipcRenderer.invoke('take', { audio, mimeType, ms }),
   answer: (approved) => ipcRenderer.invoke('answer', approved),
   interactive: (on) => ipcRenderer.send('interactive', on),
+  stopped: () => ipcRenderer.send('stopped'),
 });

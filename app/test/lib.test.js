@@ -2,12 +2,20 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { PROVIDERS, resolveStt, parseYesNo } = require('../lib');
 
-test('spoken confirmation: yes, no, and a muddled answer lands on no', () => {
+test('spoken confirmation: only a whole yes or no answers; anything else asks again', () => {
   assert.equal(parseYesNo('Yes, go ahead.'), true);
   assert.equal(parseYesNo('yeah do it'), true);
+  assert.equal(parseYesNo('Okay.'), true);
   assert.equal(parseYesNo('No.'), false);
-  assert.equal(parseYesNo("don't"), false);
-  assert.equal(parseYesNo('yes... no, stop'), false);
+  assert.equal(parseYesNo("don't do it"), false);
+  assert.equal(parseYesNo('Don’t do it.'), false); // curly apostrophe from the transcriber
+  assert.equal(parseYesNo('No thanks'), false);
+  // New commands that happen to contain yes/no words are not answers.
+  assert.equal(parseYesNo('okay, open Safari'), null);
+  assert.equal(parseYesNo('sure, play music'), null);
+  assert.equal(parseYesNo('make sure the lights are off'), null);
+  assert.equal(parseYesNo('stop the music'), null);
+  assert.equal(parseYesNo('yes... no, stop'), null);
   assert.equal(parseYesNo('what was that?'), null);
 });
 

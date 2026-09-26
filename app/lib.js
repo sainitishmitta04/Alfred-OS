@@ -52,13 +52,15 @@ function resolveStt(env, choice = {}) {
   return { provider, model, language: env.STT_LANGUAGE ?? 'en', key: env[p.keyEnv] || '', label: `${p.label} ${model}` };
 }
 
-// A spoken answer to "should I go ahead?". Any "no" wins, so a muddled answer lands on the safe side.
-const YES = /\b(yes|yeah|yep|yup|sure|ok|okay|go ahead|do it|confirm|confirmed|approve|approved)\b/i;
-const NO = /\b(no|nope|nah|don'?t|do not|stop|cancel|abort|decline)\b/i;
+// A spoken answer to "should I go ahead?". Only a whole answer counts: "okay, open Safari" is a new
+// command, not a yes, so anything that isn't purely yes or no returns null and the question is asked again.
+const YES = /^(yes|yeah|yep|yup|sure|ok|okay|confirm|approve|go ahead|do it)( (please|go ahead|do it|confirm|sure|ok|okay))*$/;
+const NO = /^(no|nope|nah|don't|dont|do not|stop|cancel|abort|decline)( (thanks|thank you|please|no|don't|dont|do it|stop|cancel))*$/;
 
 function parseYesNo(text) {
-  if (NO.test(text)) return false;
-  if (YES.test(text)) return true;
+  const t = text.toLowerCase().replace(/[’‘]/g, "'").replace(/[^a-z' ]+/g, ' ').replace(/\s+/g, ' ').trim();
+  if (NO.test(t)) return false;
+  if (YES.test(t)) return true;
   return null;
 }
 
