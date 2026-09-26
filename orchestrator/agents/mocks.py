@@ -19,13 +19,6 @@ async def run_browser_agent(goal: str, ctx: AgentContext) -> str:
     return f"[MOCK] Browser agent would handle: {goal}"
 
 
-# MOCK — replace with real import (Person A: Knowledge Agent, Obsidian MCP)
-async def run_knowledge_agent(goal: str, ctx: AgentContext) -> str:
-    ctx.step("vault_search", f"would search the Obsidian vault for: {goal}")
-    await asyncio.sleep(0.3)
-    return f"[MOCK] Knowledge agent would handle: {goal}"
-
-
 # MOCK — replace with real native executor (volume, play/pause, open app)
 async def run_direct_command(goal: str, ctx: AgentContext) -> str:
     ctx.step("execute", goal)
@@ -44,6 +37,4 @@ AGENTS = [
         run_desktop_agent,
         timeout_s=120,
     ),
-    FunctionAgent("knowledge", "Refers to the user's notes, the Obsidian vault, or personal "
-                  "knowledge base (reading, writing, or searching notes)", run_knowledge_agent),
 ]

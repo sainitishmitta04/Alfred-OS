@@ -74,12 +74,12 @@ async def test_hooks_can_rewrite_goal_and_errors_are_isolated(make_engine):
 
 
 async def test_always_confirm_agent(make_engine, registry):
-    registry.get("knowledge").always_confirm = True
+    registry.get("desktop").always_confirm = True
     try:
-        r = await make_engine(StubRouter("knowledge")).handle_transcript("read notes")
+        r = await make_engine(StubRouter("desktop")).handle_transcript("read notes")
         assert r["status"] == "needs_confirmation"
     finally:
-        registry.get("knowledge").always_confirm = False
+        registry.get("desktop").always_confirm = False
 
 
 async def test_jev_verify_step(make_engine, settings):
