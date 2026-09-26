@@ -64,4 +64,51 @@ function parseYesNo(text) {
   return null;
 }
 
-module.exports = { PROVIDERS, resolveStt, parseYesNo };
+// The orchestrator's GET /events stream: feed it text as it arrives; it calls onEvent(type, data) per event.
+function sseParser(onEvent) {
+  let buf = '';
+  return (chunk) => {
+    buf += chunk.replace(/\r\n/g, '\n');
+    let end;
+    while ((end = buf.indexOf('\n\n')) >= 0) {
+      const block = buf.slice(0, end);
+      buf = buf.slice(end + 2);
+      let type = 'message', data = '';
+      for (const line of block.split('\n')) {
+        if (line.startsWith('event:')) type = line.slice(6).trim();
+        else if (line.startsWith('data:')) data += line.slice(5).trim();
+      }
+      if (!data) continue; // keepalive comments
+      try { onEvent(type, JSON.parse(data)); } catch { /* one bad event must not end the stream */ }
+    }
+  };
+}
+
+const FINAL = new Set(['completed', 'failed', 'cancelled']);
+
+// Fold one orchestrator event into its task (session). Returns the task, or null if the event isn't about one.
+function applyEvent(tasks, type, ev) {
+  const id = ev?.session_id;
+  if (!id || !['session', 'status', 'step', 'error'].includes(type)) return null;
+  const t = tasks.get(id) || { session_id: id, transcript: '', status: 'pending', steps: [], created: Date.now() };
+  if (type === 'session') t.transcript = ev.transcript || t.transcript;
+  if (type === 'status') {
+    const { type: _type, session_id: _id, ...fields } = ev;
+    Object.assign(t, fields);
+  }
+  if (type === 'step' && ev.step && !t.steps.some((s) => s.id === ev.step.id)) t.steps.push(ev.step);
+  if (type === 'error') t.error = ev.message;
+  tasks.set(id, t);
+  return t;
+}
+
+// A row from GET /sessions, in the same shape the live events build.
+function taskFromSession(row, prev) {
+  return {
+    ...prev, ...row, session_id: row.id,
+    steps: row.steps || prev?.steps || [],
+    created: prev?.created || Date.parse(`${String(row.created_at).replace(' ', 'T')}Z`) || Date.now(),
+  };
+}
+
+module.exports = { PROVIDERS, resolveStt, parseYesNo, sseParser, applyEvent, taskFromSession, FINAL };

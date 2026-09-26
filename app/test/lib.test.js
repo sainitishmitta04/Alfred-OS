@@ -1,6 +1,41 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { PROVIDERS, resolveStt, parseYesNo } = require('../lib');
+const { PROVIDERS, resolveStt, parseYesNo, sseParser, applyEvent, taskFromSession } = require('../lib');
+
+test('live events: split across chunks, keepalives skipped, bad JSON ignored', () => {
+  const got = [];
+  const push = sseParser((type, data) => got.push([type, data]));
+  push(': connected\n\nevent: session\ndata: {"session_id":"s1","transcr');
+  push('ipt":"lower the volume"}\n\n: keepalive\n\nevent: status\ndata: {broken\n\n');
+  push('event: step\r\ndata: {"session_id":"s1","step":{"id":7,"action":"route"}}\r\n\r\n');
+  assert.deepEqual(got.map(([t]) => t), ['session', 'step']);
+  assert.equal(got[0][1].transcript, 'lower the volume');
+});
+
+test('tasks: events build one task per session; steps are not duplicated', () => {
+  const tasks = new Map();
+  applyEvent(tasks, 'session', { type: 'session', session_id: 's1', transcript: 'lower the volume' });
+  applyEvent(tasks, 'status', { type: 'status', session_id: 's1', status: 'routed', route: 'direct' });
+  const step = { id: 3, action: 'dispatch' };
+  applyEvent(tasks, 'step', { type: 'step', session_id: 's1', step });
+  applyEvent(tasks, 'step', { type: 'step', session_id: 's1', step });
+  const t = applyEvent(tasks, 'status', { type: 'status', session_id: 's1', status: 'completed', response_text: 'Done.' });
+  assert.equal(t.status, 'completed');
+  assert.equal(t.route, 'direct');
+  assert.equal(t.type, undefined); // the event's own "type" field doesn't leak into the task
+  assert.equal(t.steps.length, 1);
+  assert.equal(applyEvent(tasks, 'status', { status: 'x' }), null);
+});
+
+test('history rows keep what live events already knew', () => {
+  const prev = { session_id: 's1', steps: [{ id: 1 }], created: 5, sttMs: 400 };
+  const t = taskFromSession({ id: 's1', status: 'completed', created_at: '2026-09-26 09:00:00' }, prev);
+  assert.equal(t.session_id, 's1');
+  assert.equal(t.sttMs, 400);
+  assert.equal(t.steps.length, 1);
+  assert.equal(t.created, 5);
+  assert.equal(taskFromSession({ id: 's2', created_at: '2026-09-26 09:00:00' }).created, Date.parse('2026-09-26T09:00:00Z'));
+});
 
 test('spoken confirmation: only a whole yes or no answers; anything else asks again', () => {
   assert.equal(parseYesNo('Yes, go ahead.'), true);
