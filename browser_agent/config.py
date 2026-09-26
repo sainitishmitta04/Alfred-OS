@@ -51,6 +51,9 @@ def _find_playwright_browser() -> str:
 class BrowserSettings:
     # Providers tried in order; ones without an API key are skipped.
     llm_providers: list[str] = field(default_factory=lambda: ["gemini", "openrouter"])
+    anthropic_api_key: str = ""
+    anthropic_models: list[str] = field(default_factory=list)   # empty = claude-opus-5
+    anthropic_effort: str | None = "low"
     gemini_api_key: str = ""
     gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta/openai/"
     gemini_models: list[str] = field(default_factory=list)   # empty = auto-pick newest Flash models
@@ -84,6 +87,9 @@ class BrowserSettings:
         models = [m.strip() for m in _env("OPENROUTER_MODELS").split(",") if m.strip()] or list(DEFAULT_MODELS)
         return cls(
             llm_providers=[p.strip().lower() for p in _env("LLM_PROVIDERS", "gemini,openrouter").split(",") if p.strip()],
+            anthropic_api_key=_env("ANTHROPIC_API_KEY"),
+            anthropic_models=[m.strip() for m in _env("BROWSER_ANTHROPIC_MODEL").split(",") if m.strip()],
+            anthropic_effort=_env("BROWSER_ANTHROPIC_EFFORT", "low") if _env("BROWSER_ANTHROPIC_EFFORT", "low") != "none" else None,
             gemini_api_key=_env("GEMINI_API_KEY") or _env("GOOGLE_API_KEY"),
             gemini_base_url=_env("GEMINI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai/"),
             gemini_models=[m.strip() for m in _env("GEMINI_MODELS").split(",") if m.strip()],
