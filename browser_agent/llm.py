@@ -43,6 +43,8 @@ class ChatResult:
     tool_calls: list[ToolCall] = field(default_factory=list)
     model: str = ""
     latency_ms: int = 0
+    # Anthropic only: the reply's content blocks as returned (thinking blocks included), sent back unchanged.
+    anthropic_content: list[dict[str, Any]] | None = None
 
     def assistant_message(self) -> dict[str, Any]:
         msg: dict[str, Any] = {"role": "assistant", "content": self.content or ""}
@@ -52,6 +54,8 @@ class ChatResult:
                  "function": {"name": c.name, "arguments": c.raw_arguments or json.dumps(c.arguments)}}
                 for c in self.tool_calls
             ]
+        if self.anthropic_content:
+            msg["_anthropic_content"] = self.anthropic_content  # "_" keys are stripped for other providers
         return msg
 
 
@@ -113,7 +117,7 @@ class OpenAICompatClient:
         for candidate in self._candidates(model):
             start = time.perf_counter()
             try:
-                kwargs: dict[str, Any] = {"model": candidate, "messages": messages,
+                kwargs: dict[str, Any] = {"model": candidate, "messages": [_public(m) for m in messages],
                                           "temperature": temperature, "max_tokens": max_tokens}
                 if tools:
                     kwargs["tools"] = tools
@@ -236,12 +240,117 @@ class GeminiClient(OpenAICompatClient):
         return self.models
 
 
-class LLMRouter:
-    """Tries providers in order (e.g. Gemini, then OpenRouter). Same interface as a single provider."""
+def _public(message: dict[str, Any]) -> dict[str, Any]:
+    """Drop provider-private keys (e.g. `_anthropic_content`) before a message goes to another provider."""
+    return {k: v for k, v in message.items() if not k.startswith("_")}
 
-    def __init__(self, providers: list[OpenAICompatClient]) -> None:
+
+def _to_anthropic(messages: list[dict[str, Any]]) -> tuple[str, list[dict[str, Any]]]:
+    """OpenAI-style history -> (system, Messages API turns). Consecutive same-role turns are merged, so a turn's
+    tool results go back in one user message (tool results first, then any hint text)."""
+    system: list[str] = []
+    turns: list[dict[str, Any]] = []
+
+    def add(role: str, blocks: list[dict[str, Any]]) -> None:
+        if turns and turns[-1]["role"] == role:
+            turns[-1]["content"].extend(blocks)
+        else:
+            turns.append({"role": role, "content": list(blocks)})
+
+    for m in messages:
+        role = m.get("role")
+        if role == "system":
+            system.append(str(m.get("content") or ""))
+        elif role == "assistant" and m.get("_anthropic_content"):
+            add("assistant", m["_anthropic_content"])  # Claude's own reply, thinking blocks and all
+        elif role == "assistant":  # produced by another provider earlier in this run
+            blocks = [{"type": "text", "text": m["content"]}] if m.get("content") else []
+            for call in m.get("tool_calls") or []:
+                fn = call.get("function", {})
+                try:
+                    args = json.loads(fn.get("arguments") or "{}")
+                except json.JSONDecodeError:
+                    args = {}
+                blocks.append({"type": "tool_use", "id": call["id"], "name": fn.get("name", ""),
+                               "input": args if isinstance(args, dict) else {}})
+            if blocks:
+                add("assistant", blocks)
+        elif role == "tool":
+            add("user", [{"type": "tool_result", "tool_use_id": m["tool_call_id"],
+                          "content": str(m.get("content") or "(empty result)")}])
+        else:
+            add("user", [{"type": "text", "text": str(m.get("content") or " ")}])
+    return "\n\n".join(s for s in system if s), turns
+
+
+class AnthropicClient:
+    """Claude through the Anthropic SDK, with the same `chat()` contract as the OpenAI-compatible providers.
+
+    The default model is Claude Opus 5 at low effort: each browser step is a small decision. Claude Opus 5.5 and
+    Claude Fable 5.1 reject histories edited after the fact, and this agent shortens old tool results
+    (`BrowserAgent._compact`), so don't point this at those models without turning that off.
+    """
+
+    provider = "anthropic"
+
+    def __init__(self, api_key: str, models: list[str] | None = None, *, effort: str | None = "low",
+                 timeout_s: float = 45.0, client: Any = None) -> None:
+        if client is None:
+            from anthropic import AsyncAnthropic
+
+            client = AsyncAnthropic(api_key=api_key, timeout=timeout_s, max_retries=1)
+        self.client, self.models = client, list(models or ["claude-opus-5"])
+        self.effort, self.timeout_s = effort, timeout_s
+
+    async def validate_models(self) -> list[str]:
+        return self.models
+
+    async def chat(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]] | None = None,
+                   *, model: str | None = None, temperature: float = 0.2, max_tokens: int = 1200) -> ChatResult:
+        import anthropic
+
+        name = model if model and model.startswith("claude") else self.models[0]  # planner names are OpenRouter's
+        system, turns = _to_anthropic(messages)
+        kwargs: dict[str, Any] = {"model": name, "messages": turns,
+                                  # thinking shares this budget; the callers' limits are sized for answers only
+                                  "max_tokens": max(max_tokens, 8000)}
+        if system:
+            kwargs["system"] = system
+        if tools:
+            kwargs["tools"] = [{"name": t["function"]["name"], "description": t["function"].get("description", ""),
+                                "input_schema": t["function"].get("parameters") or {"type": "object", "properties": {}}}
+                               for t in tools]
+        if self.effort:
+            kwargs["output_config"] = {"effort": self.effort}
+        # No temperature: current Claude models reject sampling parameters.
+        start = time.perf_counter()
+        try:
+            resp = await asyncio.wait_for(self.client.messages.create(**kwargs), self.timeout_s)
+        except anthropic.BadRequestError as exc:
+            if "credit balance" in str(exc):
+                raise DailyQuotaExceeded(f"anthropic credit balance is too low: {exc}") from exc
+            raise LLMUnavailable(f"anthropic rejected the request: {exc}") from exc
+        except (anthropic.APIStatusError, anthropic.APIConnectionError, asyncio.TimeoutError) as exc:
+            raise LLMUnavailable(f"anthropic {name}: {type(exc).__name__}: {str(exc)[:200]}") from exc
+        if resp.stop_reason == "refusal":  # let the router try the next provider
+            raise LLMUnavailable(f"anthropic {name} declined this request")
+
+        calls = [ToolCall(id=b.id, name=b.name, arguments=dict(b.input or {}), raw_arguments=json.dumps(b.input or {}))
+                 for b in resp.content if b.type == "tool_use"]
+        text = "".join(b.text for b in resp.content if b.type == "text").strip()
+        if not text and not calls:
+            raise LLMUnavailable(f"anthropic {name} returned neither text nor tool calls")
+        return ChatResult(content=text, tool_calls=calls, model=getattr(resp, "model", name) or name,
+                          latency_ms=int((time.perf_counter() - start) * 1000),
+                          anthropic_content=[b.model_dump(mode="json", exclude_none=True) for b in resp.content])
+
+
+class LLMRouter:
+    """Tries providers in order (e.g. Anthropic, then Gemini, then OpenRouter). Same interface as one provider."""
+
+    def __init__(self, providers: list[Any]) -> None:
         if not providers:
-            raise ValueError("no LLM provider configured — set GEMINI_API_KEY or OPENROUTER_API_KEY")
+            raise ValueError("no LLM provider configured — set ANTHROPIC_API_KEY, GEMINI_API_KEY or OPENROUTER_API_KEY")
         self.providers = providers
 
     @property
@@ -274,15 +383,18 @@ class LLMRouter:
 
 def build_llm(settings: Any) -> LLMRouter:
     """Construct the provider chain from BrowserSettings (order = settings.llm_providers)."""
-    providers: list[OpenAICompatClient] = []
+    providers: list[Any] = []
     for name in settings.llm_providers:
-        if name == "gemini" and settings.gemini_api_key:
+        if name == "anthropic" and settings.anthropic_api_key:
+            providers.append(AnthropicClient(settings.anthropic_api_key, settings.anthropic_models or None,
+                                             effort=settings.anthropic_effort, timeout_s=settings.llm_timeout_s))
+        elif name == "gemini" and settings.gemini_api_key:
             providers.append(GeminiClient(settings.gemini_api_key, settings.gemini_models or None,
                                           base_url=settings.gemini_base_url, timeout_s=settings.llm_timeout_s,
                                           reasoning_effort=settings.gemini_reasoning_effort))
         elif name == "openrouter" and settings.openrouter_api_key:
             providers.append(OpenRouterClient(settings.openrouter_api_key, settings.models,
                                               base_url=settings.openrouter_base_url, timeout_s=settings.llm_timeout_s))
-        elif name not in {"gemini", "openrouter"}:
-            log.warning("unknown LLM provider %r (expected gemini/openrouter)", name)
+        elif name not in {"anthropic", "gemini", "openrouter"}:
+            log.warning("unknown LLM provider %r (expected anthropic/gemini/openrouter)", name)
     return LLMRouter(providers)
