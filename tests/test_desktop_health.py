@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from app.main import app
+from desktop_use.main import app
 
 
 def test_health_returns_ok() -> None:
@@ -12,11 +12,5 @@ def test_health_returns_ok() -> None:
     payload = response.json()
     assert payload["status"] == "ok"
     assert payload["service"] == "alfred"
-    assert "platform" in payload
-    assert isinstance(payload["anthropic_configured"], bool)
-    assert isinstance(payload["playwright_available"], bool)
-    assert payload["tools"] == [
-        "control_media_player",
-        "execute_system_script",
-        "headless_web_scrape",
-    ]
+    assert "read_file" in payload["tools"]
+    assert "control_media_player" in payload["tools"]

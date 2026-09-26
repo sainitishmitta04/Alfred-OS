@@ -5,9 +5,10 @@ import platform
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 
-from app import config
-from app.agent.engine import TOOL_HANDLERS, AgentEngine
-from app.schemas import (
+from desktop_use import config
+from desktop_use.agent.engine import AgentEngine
+from desktop_use.tools.registry import TOOL_HANDLERS
+from desktop_use.schemas import (
     AgentExecuteRequest,
     AgentExecuteResponse,
     AgentTaskReceipt,
@@ -16,7 +17,7 @@ from app.schemas import (
     HealthResponse,
     TaskStatus,
 )
-from app.task_store import TASK_STORE
+from desktop_use.task_store import TASK_STORE
 
 app = FastAPI(title="Alfred", version="0.1.0", description="Desktop-use agent backend for Alfred-OS.")
 
