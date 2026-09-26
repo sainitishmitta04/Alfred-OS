@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import uuid
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Query
@@ -20,10 +21,12 @@ from orchestrator.events import EventBus
 from orchestrator.router import JevClient, JevVerifier, build_router
 from orchestrator.agents.base import AgentContext, AgentResult
 from orchestrator.schemas import (
+    ConfirmAnswer,
     ConfirmRequest,
     DesktopRunRequest,
     DesktopRunResponse,
     OrchestratorResponse,
+    TaskAccepted,
     TranscriptRequest,
 )
 
@@ -48,6 +51,12 @@ def build_orchestrator(settings: Settings) -> tuple[Orchestrator, JevClient | No
 
 def create_app(orchestrator: Orchestrator | None = None, settings: Settings | None = None) -> FastAPI:
     settings = settings or (orchestrator.settings if orchestrator else get_settings())
+    running: set[asyncio.Task] = set()  # background commands from POST /tasks; kept so they aren't garbage-collected
+
+    def spawn(coro) -> None:
+        task = asyncio.create_task(coro)
+        running.add(task)
+        task.add_done_callback(running.discard)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -62,6 +71,9 @@ def create_app(orchestrator: Orchestrator | None = None, settings: Settings | No
                 log.exception("agent %s failed to start", agent.name)
         log.info("Alfred orchestrator ready with agents: %s", ", ".join(engine.registry.names()))
         yield
+        for task in list(running):
+            task.cancel()
+        await asyncio.gather(*running, return_exceptions=True)
         for agent in engine.registry:
             try:
                 await agent.shutdown()
@@ -126,6 +138,24 @@ def create_app(orchestrator: Orchestrator | None = None, settings: Settings | No
         if result is None:
             raise HTTPException(404, "session not found")
         return result
+
+    # Background versions of /transcript and /confirm: they answer at once, and the UI follows the task through
+    # GET /events (live) and GET /sessions/{id}. A long browser task no longer holds a request open.
+    @app.post("/tasks", status_code=202, response_model=TaskAccepted)
+    async def start_task(req: TranscriptRequest) -> dict:
+        session_id = uuid.uuid4().hex
+        spawn(engine().handle_transcript(req.transcript, session_id=session_id))
+        return {"session_id": session_id, "status": "pending"}
+
+    @app.post("/tasks/{session_id}/confirm", status_code=202, response_model=TaskAccepted)
+    async def confirm_task(session_id: str, req: ConfirmAnswer) -> dict:
+        found = engine().db.get_session(session_id, with_steps=False)
+        if found is None:
+            raise HTTPException(404, "session not found")
+        if found["status"] != "needs_confirmation":
+            raise HTTPException(409, f"session is {found['status']}, nothing to confirm")
+        spawn(engine().confirm(session_id, req.approved))
+        return {"session_id": session_id, "status": "confirming"}
 
     @app.get("/sessions")
     async def sessions(limit: int = Query(20, ge=1, le=200)) -> list[dict]:

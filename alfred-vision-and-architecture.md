@@ -57,7 +57,7 @@ Response synthesized → spoken back (TTS) + shown in a live UI action log
 - **Desktop Agent**: Claude + `@modelcontextprotocol/server-filesystem` MCP + custom native tools (AppleScript-based) for volume/apps/screenshots/lock
 - **Knowledge Agent**: Claude + community Obsidian MCP server (talks to the Obsidian Local REST API plugin)
 - **UI**: Electron (renderer shows live transcript, action log, latency readout, confirmation prompts)
-- **STT/TTS**: Web Speech API (browser-native, zero setup, good enough latency for a demo)
+- **STT**: Deepgram (`nova-3`) or OpenAI (`gpt-4o-mini-transcribe`), selectable in `.env` or the tray, called from Electron's main process (`app/`). The Web Speech API was the original choice, but its speech recognition fails inside Electron with a "network" error (electron/electron#46143). **TTS**: not in the demo.
 - **Platform target**: macOS only for this build (no cross-platform effort — pick one OS and make it reliable)
 
 ## 6. What "done" looks like for the hackathon (not a production roadmap)

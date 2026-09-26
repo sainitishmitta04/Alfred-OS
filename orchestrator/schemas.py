@@ -16,6 +16,16 @@ class ConfirmRequest(BaseModel):
     approved: bool
 
 
+class ConfirmAnswer(BaseModel):
+    approved: bool
+
+
+class TaskAccepted(BaseModel):
+    """POST /tasks answers at once; follow the task through GET /events and GET /sessions/{session_id}."""
+
+    session_id: str
+    status: str
+
 
 class DesktopRunRequest(BaseModel):
     """Bypass routing: invoke the desktop agent directly (desktop team / integration tests)."""
