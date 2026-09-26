@@ -27,9 +27,24 @@ class AgentContext:
     transcript: str
     settings: Any
     _log_step: StepLogger
+    # True when the user already approved this request (destructive-action confirmation), so agents may
+    # skip asking again for the action the user just approved.
+    approved: bool = False
 
     def step(self, action: str, detail: str | None = None, success: bool | None = True) -> None:
         self._log_step(action, detail, success)
+
+
+class ConfirmationRequired(Exception):
+    """Raise from `run`/`resume` to pause mid-task and ask the user (e.g. before submitting a form).
+
+    The engine stores `state`, returns `needs_confirmation` with `prompt`, and on approval calls
+    `agent.resume(state, ctx)`; on decline it calls `agent.cancel(state)`.
+    """
+
+    def __init__(self, prompt: str, state: Any = None) -> None:
+        super().__init__(prompt)
+        self.prompt, self.state = prompt, state
 
 
 class Agent(ABC):
@@ -44,6 +59,13 @@ class Agent(ABC):
 
     @abstractmethod
     async def run(self, goal: str, ctx: AgentContext) -> AgentResult | str: ...
+
+    async def resume(self, state: Any, ctx: AgentContext) -> AgentResult | str:
+        """Continue after the user approved a `ConfirmationRequired` pause."""
+        raise NotImplementedError(f"{self.name} does not support resuming")
+
+    async def cancel(self, state: Any) -> None:
+        """Optional: clean up after the user declined a mid-task confirmation."""
 
     async def startup(self) -> None:
         """Optional: open MCP sessions, browsers, etc. Called once when the server starts."""

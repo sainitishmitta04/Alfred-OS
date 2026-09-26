@@ -78,3 +78,36 @@ from orchestrator.main import build_orchestrator
 engine, _ = build_orchestrator(get_settings())
 result = await engine.handle_transcript("lower the volume")
 ```
+
+## 5. Browser Agent: add MCP servers and tools
+
+**Any MCP server** → add it to `mcp_servers.json`; its tools show up as `<server>__<tool>`:
+```json
+"github": {
+  "command": "npx", "args": ["-y", "@modelcontextprotocol/server-github"],
+  "env": {"GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}"},
+  "enabled_if_env": "GITHUB_TOKEN"
+},
+"remote": {"url": "https://my-mcp.example.com/mcp"}
+```
+`${VAR}` expands from the env, `enabled_if_env` makes a server optional, and `args_if_env` adds flags conditionally.
+
+**A Python tool:**
+```python
+from browser_agent import tool
+
+@tool("weather", "Current weather for a city", {"city": {"type": "string"}}, ["city"], read_only=True)
+async def weather(city: str, **_) -> str:
+    ...
+```
+Import the module somewhere at startup, or expose a `ToolSpec` (or list of them) through the `alfred.browser_tools` entry point.
+Tools that aren't read-only go through the Jev risk check automatically.
+
+**Models and providers:**
+- `LLM_PROVIDERS=gemini,openrouter` sets the provider order. A provider with no API key is skipped.
+- `GEMINI_MODELS=gemini-3.8-flash,...` pins Gemini models. If it's empty, the newest Flash models are picked automatically.
+- `GEMINI_REASONING_EFFORT=low|medium|high|none` sets how much the Gemini model "thinks" per step.
+- `OPENROUTER_MODELS=model-a:free,...` sets the OpenRouter models, tried in order.
+- All models must support tool calling.
+- To add another OpenAI-compatible provider, subclass `OpenAICompatClient` in `browser_agent/llm.py` and add it to `build_llm`.
+**Deny tools:** `BROWSER_TOOL_DENYLIST=playwright__browser_run_code_unsafe,...`
