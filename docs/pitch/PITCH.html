@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Alfred OS — Every hero needs an Alfred</title>
+<style>
+  :root {
+    --night:#050608; --cave:#0b0d11; --steel:#14171d; --line:#232833;
+    --gold:#f5c518; --gold-dim:#b8940f; --fg:#e9ecf1; --muted:#8a93a3; --red:#e5484d;
+  }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  html,body { height:100%; background:var(--night); color:var(--fg); overflow:hidden;
+    font-family:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
+  body::before { /* Gotham night sky */
+    content:""; position:fixed; inset:0; z-index:0; pointer-events:none;
+    background:
+      radial-gradient(ellipse 60% 45% at 50% 0%, rgba(245,197,24,.10), transparent 70%),
+      radial-gradient(ellipse 80% 60% at 50% 120%, #0f1218, transparent 70%),
+      var(--night);
+  }
+  .skyline { position:fixed; left:0; right:0; bottom:0; height:22vh; z-index:0; pointer-events:none; opacity:.55; }
+  .slide { position:absolute; inset:0; z-index:1; display:none; flex-direction:column; justify-content:center; padding:6vh 8vw 14vh; }
+  .slide.active { display:flex; animation:rise .45s ease; }
+  @keyframes rise { from { opacity:0; transform:translateY(10px);} to { opacity:1; transform:none; } }
+
+  .kicker { color:var(--gold); font-size:1.15vw; letter-spacing:.35em; text-transform:uppercase; margin-bottom:2vh; font-weight:700; }
+  h1 { font-size:8.5vw; letter-spacing:.06em; line-height:.95; font-weight:900; text-transform:uppercase; }
+  h1 .os { color:var(--gold); }
+  h2 { font-size:3.4vw; letter-spacing:-.01em; margin-bottom:4vh; font-weight:800; }
+  h2 em { font-style:normal; color:var(--gold); }
+  .tag { font-size:2.5vw; margin-top:3vh; color:var(--gold); font-weight:600; font-style:italic; }
+  .sub { font-size:1.8vw; margin-top:1.5vh; color:var(--muted); }
+  .center { align-items:center; text-align:center; }
+
+  /* Bat-signal */
+  .signal { position:relative; width:26vw; height:26vw; max-height:44vh; max-width:44vh; margin-bottom:3vh; }
+  .signal .beam { position:absolute; inset:0; border-radius:50%;
+    background:radial-gradient(circle, rgba(245,197,24,.95) 0%, rgba(245,197,24,.75) 55%, rgba(245,197,24,.15) 70%, transparent 72%);
+    filter:blur(.3px); animation:pulse 4s ease-in-out infinite; }
+  .signal svg { position:absolute; inset:18%; width:64%; height:64%; }
+  @keyframes pulse { 0%,100% { opacity:.9; transform:scale(1);} 50% { opacity:1; transform:scale(1.03);} }
+
+  .bat { display:inline-block; width:1.1em; height:.55em; vertical-align:middle; }
+
+  ul.list { list-style:none; display:grid; gap:2.1vh; }
+  ul.list li { font-size:1.75vw; line-height:1.4; color:var(--muted); padding-left:2.2vw; position:relative; }
+  ul.list li::before { content:""; position:absolute; left:0; top:.45em; width:1.1vw; height:.55vw; background:var(--gold);
+    -webkit-mask:url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 50"><path d="M50 12 L54 4 L56 14 C62 10 72 10 80 16 C84 8 92 4 100 6 C92 12 90 22 92 30 C84 26 76 30 72 40 C66 34 58 34 50 46 C42 34 34 34 28 40 C24 30 16 26 8 30 C10 22 8 12 0 6 C8 4 16 8 20 16 C28 10 38 10 44 14 L46 4 Z"/></svg>') center/contain no-repeat;
+            mask:url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 50"><path d="M50 12 L54 4 L56 14 C62 10 72 10 80 16 C84 8 92 4 100 6 C92 12 90 22 92 30 C84 26 76 30 72 40 C66 34 58 34 50 46 C42 34 34 34 28 40 C24 30 16 26 8 30 C10 22 8 12 0 6 C8 4 16 8 20 16 C28 10 38 10 44 14 L46 4 Z"/></svg>') center/contain no-repeat; }
+  ul.list li b { color:var(--fg); }
+
+  /* demo table */
+  .demo { display:grid; gap:0; border-top:1px solid var(--line); }
+  .row { display:grid; grid-template-columns:4vw 1.25fr 1fr 7vw; gap:1.5vw; align-items:center; padding:2.1vh 0; border-bottom:1px solid var(--line); }
+  .row .n { color:var(--gold); font-weight:900; font-size:2.4vw; }
+  .row .q { font-size:1.65vw; font-weight:600; }
+  .row .p { font-size:1.3vw; color:var(--muted); line-height:1.35; }
+  .chip { justify-self:start; font-size:1vw; padding:.6vh .8vw; border-radius:999px; border:1px solid var(--gold-dim); color:var(--gold); text-transform:uppercase; letter-spacing:.1em; }
+  .chip.red { border-color:var(--red); color:var(--red); }
+  .hint { margin-top:3vh; color:var(--muted); font-size:1.2vw; }
+  kbd { font-family:ui-monospace,Menlo,monospace; background:var(--steel); border:1px solid var(--line); border-bottom-width:3px; border-radius:6px; padding:.1em .45em; color:var(--gold); }
+
+  /* architecture */
+  .arch { display:grid; gap:1.8vh; }
+  .lane { display:flex; align-items:center; gap:1vw; justify-content:center; flex-wrap:wrap; }
+  .node { background:linear-gradient(180deg,var(--steel),var(--cave)); border:1px solid var(--line); border-radius:12px; padding:1.5vh 1.3vw; text-align:center; font-size:1.35vw; font-weight:600; min-width:10vw; }
+  .node small { display:block; color:var(--muted); font-weight:400; font-size:1vw; margin-top:.4vh; }
+  .node.gold { border-color:var(--gold); box-shadow:0 0 24px rgba(245,197,24,.18), inset 0 0 0 1px rgba(245,197,24,.35); }
+  .node.dim { opacity:.6; border-style:dashed; }
+  .arr { color:var(--gold); font-size:1.6vw; }
+  .down { text-align:center; color:var(--gold); font-size:1.4vw; line-height:1; }
+  .fallback { text-align:center; color:var(--muted); font-size:1.1vw; margin-top:-.8vh; }
+  .fallback b { color:var(--gold); }
+
+  /* cards */
+  .grid { display:grid; grid-template-columns:repeat(3,1fr); gap:2.4vh 1.8vw; }
+  .grid.two { grid-template-columns:repeat(2,1fr); }
+  .card { background:linear-gradient(180deg,var(--steel),var(--cave)); border:1px solid var(--line); border-radius:16px; padding:2.6vh 1.6vw; position:relative; overflow:hidden; }
+  .card::after { content:""; position:absolute; left:0; top:0; height:3px; width:100%; background:linear-gradient(90deg,var(--gold),transparent); }
+  .card .ic { font-size:2.2vw; }
+  .card b { display:block; font-size:1.5vw; margin:1vh 0 .6vh; }
+  .card p { color:var(--muted); font-size:1.15vw; line-height:1.45; }
+  .card code, p code, li code { font-family:ui-monospace,Menlo,monospace; color:var(--gold); font-size:.92em; }
+
+  .stat { display:flex; gap:4vw; margin-top:4vh; }
+  .stat div { font-size:1.2vw; color:var(--muted); }
+  .stat b { display:block; font-size:3.2vw; color:var(--gold); font-weight:900; }
+
+  .tagline { font-size:4.3vw; line-height:1.15; font-weight:800; }
+  .tagline span { color:var(--gold); }
+  .next { margin-top:5vh; color:var(--muted); font-size:1.5vw; }
+
+  #bar { position:fixed; left:0; bottom:0; height:4px; background:var(--gold); z-index:5; transition:width .3s; box-shadow:0 0 12px var(--gold); }
+  #count { position:fixed; right:2vw; bottom:2vh; color:var(--muted); font-size:1vw; z-index:5; }
+  #help { position:fixed; left:2vw; bottom:2vh; color:#4a5160; font-size:.9vw; z-index:5; }
+  #notes { position:fixed; left:0; right:0; bottom:0; z-index:6; background:rgba(0,0,0,.92); color:#ddd; padding:2.2vh 4vw 3vh; font-size:1.25vw; line-height:1.5; display:none; border-top:2px solid var(--gold); }
+  #notes b { color:var(--gold); }
+</style>
+</head>
+<body>
+
+<!-- Gotham skyline -->
+<svg class="skyline" viewBox="0 0 1600 200" preserveAspectRatio="none" aria-hidden="true">
+  <path fill="#0c0f14" d="M0 200 V140 h40 v-30 h30 v50 h25 V90 h18 v-20 h14 v20 h18 v80 h30 v-60 h40 v40 h20 V60 h10 v-25 h8 v25 h10 v140 h35 v-90 h45 v50 h25 v-70 h30 v110 h20 V100 h50 v60 h30 V40 h12 v-20 h6 v20 h12 v160 h30 v-80 h40 v-30 h30 v110 h25 v-70 h45 v90 h30 V80 h25 v-15 h20 v15 h25 v120 h35 v-60 h40 v30 h30 V70 h14 v-30 h8 v30 h14 v130 h40 v-90 h35 v50 h30 v-40 h40 v80 h25 V110 h45 v90 h30 v-50 h40 v-40 h30 v90 h40 V200 Z"/>
+  <path fill="#07090c" d="M0 200 V170 h60 v-20 h50 v30 h70 v-40 h40 v50 h90 v-30 h60 v20 h80 v-45 h50 v55 h100 v-25 h70 v15 h90 v-35 h60 v45 h110 v-20 h80 v30 h90 v-50 h50 v40 h120 v-15 h90 v25 h100 V200 Z"/>
+</svg>
+
+<!-- 1. Title -->
+<section class="slide center" data-notes="<b>Say:</b> “Batman never clicks through menus. He says what he needs and Alfred handles it. Every AI assistant today can <i>talk</i>. Alfred <i>acts</i>. Hold a hotkey, say one sentence, and it controls your Mac, browses the web and manages your files, and it shows you every step it takes. Let me show you.” → <b>switch to the live demo.</b>">
+  <div class="signal" aria-hidden="true">
+    <div class="beam"></div>
+    <svg viewBox="0 0 100 50"><path fill="#050608" d="M50 12 L54 4 L56 14 C62 10 72 10 80 16 C84 8 92 4 100 6 C92 12 90 22 92 30 C84 26 76 30 72 40 C66 34 58 34 50 46 C42 34 34 34 28 40 C24 30 16 26 8 30 C10 22 8 12 0 6 C8 4 16 8 20 16 C28 10 38 10 44 14 L46 4 Z"/></svg>
+  </div>
+  <h1>Alfred <span class="os">OS</span></h1>
+  <p class="tag">Every hero needs an Alfred.</p>
+  <p class="sub">Talk to your Mac. It acts, and shows you every step.</p>
+</section>
+
+<!-- 2. Demo -->
+<section class="slide" data-notes="Press <b>Alt+Space</b>, speak, tap again. Keep the overlay and the <b>Tasks window</b> visible. End on #3, because the confirmation is the moment judges remember. Mic trouble? <b>ALFRED_PREVIEW_WAV</b> runs a recorded clip through the real pipeline.">
+  <div class="kicker">Live demo · The Batcave</div>
+  <h2>Three sentences. <em>Watch it think.</em></h2>
+  <div class="demo">
+    <div class="row"><div class="n">1</div><div class="q">“Set the volume to 30”</div><div class="p">Jev routes to <b>direct</b> in ~150 ms, done instantly</div><span class="chip">Direct</span></div>
+    <div class="row"><div class="n">2</div><div class="q">“Hacker News top 3, then more about the first one”</div><div class="p">Plans 2 sub-tasks: navigate → read → Jev check → search → summary</div><span class="chip">Browser</span></div>
+    <div class="row"><div class="n">3</div><div class="q">“Delete the old screenshots in Downloads”</div><div class="p"><b style="color:var(--red)">Stops and asks.</b> Say “yes”, and it finishes inside the sandbox</div><span class="chip red">Confirm</span></div>
+  </div>
+  <p class="hint"><kbd>Alt</kbd> + <kbd>Space</kbd> to talk · commands run as background tasks · questions queue up, answer by voice</p>
+</section>
+
+<!-- 3. Architecture -->
+<section class="slide" data-notes="<b>Say:</b> “Two kinds of models, each doing what it's best at. Jev, a typed decision model, answers ‘which agent?’ and ‘is this destructive?’ in about 150 milliseconds. The large models do the real work inside each specialist agent. That's why it feels fast.”">
+  <div class="kicker">The Utility Belt · Architecture</div>
+  <h2>A router and four specialists.</h2>
+  <div class="arch">
+    <div class="lane">
+      <div class="node">⌨ Alt+Space<small>Electron overlay</small></div><span class="arr">→</span>
+      <div class="node">🎙 Deepgram nova-3<small>India endpoint</small></div><span class="arr">→</span>
+      <div class="node gold">Jev Router<small>Choice + destructive Noul · ~150 ms</small></div>
+    </div>
+    <div class="fallback">if unsure: <b>Claude Haiku 4.5</b> → offline keyword router</div>
+    <div class="down">▼</div>
+    <div class="lane">
+      <div class="node">⚡ Direct<small>one-shot OS commands</small></div>
+      <div class="node">🌐 Browser<small>Gemini Flash · Playwright MCP · any MCP</small></div>
+      <div class="node">🖥 Desktop<small>Claude Haiku · files · media · AppleScript</small></div>
+      <div class="node dim">📓 Knowledge<small>Obsidian · next up</small></div>
+    </div>
+    <div class="down">▼</div>
+    <div class="lane">
+      <div class="node">📡 Live SSE log<small>overlay + Tasks window</small></div>
+      <div class="node">🗄 SQLite<small>every step, every latency</small></div>
+    </div>
+  </div>
+</section>
+
+<!-- 4. Jev -->
+<section class="slide" data-notes="<b>Say:</b> “Most agents spend a full LLM call on every yes-or-no question. Alfred asks Jev and gets a typed answer with a confidence score in milliseconds. It only escalates to Claude when Jev is unsure.”">
+  <div class="kicker">The Detective · Jev</div>
+  <h2>Every quick decision, in <em>milliseconds.</em></h2>
+  <div class="grid">
+    <div class="card"><div class="ic">🧭</div><b>Which agent?</b><p><code>Choice</code> over agent descriptions. New agents are routable automatically.</p></div>
+    <div class="card"><div class="ic">⚠️</div><b>Destructive?</b><p><code>Noul</code> in the same call, before anything runs.</p></div>
+    <div class="card"><div class="ic">🪜</div><b>Multi-step?</b><p>Decides when the browser should plan sub-tasks.</p></div>
+    <div class="card"><div class="ic">✅</div><b>Did that work?</b><p>After every browser step: step OK, then continue, done, or stuck.</p></div>
+    <div class="card"><div class="ic">✋</div><b>Irreversible click?</b><p>Checked on the actual button, backed by a keyword check.</p></div>
+    <div class="card"><div class="ic">🎯</div><b>Goal satisfied?</b><p>Final check on the answer, shown in the log.</p></div>
+  </div>
+  <div class="stat"><div><b>~150 ms</b>Jev decision</div><div><b>&lt; 0.6</b>confidence → escalate to Claude</div><div><b>0</b>crashes: keyword router offline</div></div>
+</section>
+
+<!-- 5. Safety -->
+<section class="slide" data-notes="<b>Say:</b> “Alfred has a code, just like Batman. It never does something irreversible without asking, and it never hides what it's doing.”">
+  <div class="kicker">The Code · Trust &amp; Safety</div>
+  <h2>Alfred has <em>a code.</em></h2>
+  <ul class="list">
+    <li><b>Asks before anything irreversible:</b> checked on the whole request, and again mid-task on the exact button</li>
+    <li><b>Answer by voice:</b> only a whole “yes” or “no” counts, and questions <b>expire after 10 minutes</b></li>
+    <li><b>Sandboxed:</b> files only in Desktop, Documents and Downloads, and unsafe browser tools are blocked</li>
+    <li><b>Transparent:</b> every step is live on screen and logged to SQLite with its latency</li>
+    <li><b>Never crashes:</b> Jev → Claude → keywords, with model rotation, and a friendly answer every time</li>
+  </ul>
+</section>
+
+<!-- 6. Extensibility -->
+<section class="slide" data-notes="Keep it quick: this is what makes it a platform, not a demo.">
+  <div class="kicker">Built for the League · Extensibility</div>
+  <h2>Plug in a new hero. <em>No core changes.</em></h2>
+  <div class="grid two">
+    <div class="card"><div class="ic">🧩</div><b>Add an agent</b><p><code>AGENT_OVERRIDES</code>, a pip entry point, or a file drop. It's routed automatically.</p></div>
+    <div class="card"><div class="ic">🔌</div><b>Add any MCP server</b><p>One entry in <code>mcp_servers.json</code> gives the browser agent new tools.</p></div>
+    <div class="card"><div class="ic">⏸</div><b>Pause mid-task</b><p>Any agent can raise <code>ConfirmationRequired</code> and resume on approval.</p></div>
+    <div class="card"><div class="ic">🧪</div><b>Tested</b><p>~69 Python tests and 8 JS tests. Background tasks run in parallel.</p></div>
+  </div>
+</section>
+
+<!-- 7. Close -->
+<section class="slide center" data-notes="Slowly: <b>“Alfred OS. Every hero needs an Alfred, and now everyone can have one. Thank you.”</b>">
+  <div class="signal" style="width:14vw;height:14vw" aria-hidden="true">
+    <div class="beam"></div>
+    <svg viewBox="0 0 100 50"><path fill="#050608" d="M50 12 L54 4 L56 14 C62 10 72 10 80 16 C84 8 92 4 100 6 C92 12 90 22 92 30 C84 26 76 30 72 40 C66 34 58 34 50 46 C42 34 34 34 28 40 C24 30 16 26 8 30 C10 22 8 12 0 6 C8 4 16 8 20 16 C28 10 38 10 44 14 L46 4 Z"/></svg>
+  </div>
+  <p class="tagline">Fast when it's obvious.<br>Careful when it matters.<br><span>Transparent always.</span></p>
+  <p class="next">Next → Knowledge agent (Obsidian) · spoken replies · wake word</p>
+</section>
+
+<!-- 8. Backup -->
+<section class="slide center" data-notes="Only if the live demo fails: <b>“Gotham Wi-Fi isn't on our side. Here's a recorded run.”</b> Keep narrating over it.">
+  <div class="kicker">Backup</div>
+  <h2>Recorded run</h2>
+  <video src="demo.mp4" controls style="max-width:72vw;max-height:56vh;border-radius:14px;border:1px solid var(--gold-dim)"></video>
+  <p class="next">Place the recording next to this file as <code>demo.mp4</code></p>
+</section>
+
+<div id="bar"></div><div id="count"></div><div id="notes"></div>
+<div id="help">← → navigate · F fullscreen · N notes</div>
+
+<script>
+  const slides = [...document.querySelectorAll('.slide')];
+  const notes = document.getElementById('notes');
+  let i = Math.max(0, Math.min(slides.length - 1, parseInt(location.hash.slice(1) || '1') - 1));
+  function show(n) {
+    i = Math.max(0, Math.min(slides.length - 1, n));
+    slides.forEach((s, k) => s.classList.toggle('active', k === i));
+    document.getElementById('bar').style.width = ((i + 1) / slides.length * 100) + '%';
+    document.getElementById('count').textContent = (i + 1) + ' / ' + slides.length;
+    notes.innerHTML = slides[i].dataset.notes || '';
+    history.replaceState(null, '', '#' + (i + 1));
+  }
+  document.addEventListener('keydown', e => {
+    if (['ArrowRight', 'PageDown', ' ', 'Enter'].includes(e.key)) show(i + 1);
+    else if (['ArrowLeft', 'PageUp', 'Backspace'].includes(e.key)) show(i - 1);
+    else if (e.key === 'Home') show(0);
+    else if (e.key === 'End') show(slides.length - 1);
+    else if (e.key.toLowerCase() === 'f') document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen();
+    else if (e.key.toLowerCase() === 'n') notes.style.display = notes.style.display === 'block' ? 'none' : 'block';
+  });
+  document.addEventListener('click', e => { if (!e.target.closest('video')) show(i + (e.clientX > innerWidth / 3 ? 1 : -1)); });
+  show(i);
+</script>
+</body>
+</html>
