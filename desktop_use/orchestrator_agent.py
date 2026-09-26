@@ -27,7 +27,7 @@ async def run_desktop_agent(goal: str, ctx: AgentContext) -> AgentResult:
 
     ctx.step("plan", goal)
     api_key = getattr(ctx.settings, "anthropic_api_key", "") or None
-    model = os.getenv("ALFRED_AGENT_MODEL", "claude-3-5-haiku-20241022").strip()
+    model = os.getenv("ALFRED_AGENT_MODEL", "claude-haiku-4-5-20251001").strip()
 
     engine = AgentEngine(api_key=api_key, model=model or None)
     try:
@@ -35,6 +35,12 @@ async def run_desktop_agent(goal: str, ctx: AgentContext) -> AgentResult:
     except (ValueError, RuntimeError) as error:
         ctx.step("error", str(error), False)
         return AgentResult(text=str(error), success=False)
+    except Exception as error:
+        module = getattr(error.__class__, "__module__", "")
+        if module.startswith("anthropic"):
+            ctx.step("error", str(error), False)
+            return AgentResult(text=str(error), success=False)
+        raise
 
     summary = outcome.get("summary", "Done.")
     success = not any(

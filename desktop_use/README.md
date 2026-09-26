@@ -26,9 +26,27 @@ uv run uvicorn desktop_use.main:app --reload --host 127.0.0.1 --port 8787
 ## API
 
 - `GET /health` — service and tool availability
+- `GET /api/v1/tools` — tool schemas (for Haiku + manual testing)
+- `POST /api/v1/tools/{tool_name}/invoke` — run one tool directly (no LLM)
 - `POST /api/v1/agent/execute` — synchronous agent run
 - `POST /api/v1/agent/task` — enqueue background task (returns `task_id`)
 - `GET /api/v1/agent/task/{task_id}` — poll task status
+
+### Invoke tools directly (examples)
+
+```bash
+curl -s -X POST http://127.0.0.1:8787/api/v1/tools/execute_system_script/invoke \
+  -H 'Content-Type: application/json' \
+  -d '{"arguments":{"command_type":"battery_status"}}' | jq
+
+curl -s -X POST http://127.0.0.1:8787/api/v1/tools/control_volume/invoke \
+  -H 'Content-Type: application/json' \
+  -d '{"arguments":{"action":"get"}}' | jq
+
+curl -s -X POST http://127.0.0.1:8787/api/v1/tools/get_system_info/invoke \
+  -H 'Content-Type: application/json' \
+  -d '{"arguments":{}}' | jq
+```
 
 ## Tests
 

@@ -67,5 +67,7 @@ async def execute_system_script(command_type: str, args: dict[str, Any] | None =
 
     raise SystemUtilsError(
         f"Unsupported command_type: {command_type!r}. "
-        "Use battery_status, set_volume, list_project_files, or run_osascript."
+        "Use battery_status, set_volume, list_project_files, run_osascript, or prefer "
+        "dedicated tools (control_volume, lock_screen, capture_screenshot, set_appearance, "
+        "open_application, show_notification, get_system_info)."
     )

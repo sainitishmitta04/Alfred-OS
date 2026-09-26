@@ -13,6 +13,15 @@ from desktop_use.tools.filesystem import (
     search_files,
     write_file,
 )
+from desktop_use.tools.macos_system import (
+    capture_screenshot,
+    control_volume,
+    get_system_info,
+    lock_screen,
+    open_application,
+    set_appearance,
+    show_notification,
+)
 from desktop_use.tools.system_utils import execute_system_script
 from desktop_use.tools.web_browser import headless_web_scrape
 
@@ -126,8 +135,77 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "control_volume",
+        "description": "Get, set, increase, decrease, mute, or unmute macOS output volume.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": ["get", "set", "up", "down", "mute", "unmute"],
+                },
+                "level": {"type": "integer", "description": "Required for set (0-100)."},
+                "steps": {"type": "integer", "description": "Step size for up/down (default 5)."},
+            },
+            "required": ["action"],
+        },
+    },
+    {
+        "name": "lock_screen",
+        "description": "Lock the Mac session immediately.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "capture_screenshot",
+        "description": "Save a PNG screenshot of the main display (default path on Desktop).",
+        "input_schema": {
+            "type": "object",
+            "properties": {"path": {"type": "string", "description": "Optional absolute .png path."}},
+        },
+    },
+    {
+        "name": "set_appearance",
+        "description": "Switch macOS dark mode, light mode, or toggle.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "mode": {"type": "string", "enum": ["dark", "light", "toggle"]},
+            },
+            "required": ["mode"],
+        },
+    },
+    {
+        "name": "open_application",
+        "description": "Launch a macOS app by name; optionally bring it to the foreground.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "activate": {"type": "boolean"},
+            },
+            "required": ["name"],
+        },
+    },
+    {
+        "name": "show_notification",
+        "description": "Show a macOS notification banner with title and message.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "title": {"type": "string"},
+                "message": {"type": "string"},
+            },
+            "required": ["title", "message"],
+        },
+    },
+    {
+        "name": "get_system_info",
+        "description": "Frontmost app, hostname, and macOS version.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
         "name": "execute_system_script",
-        "description": "Battery, volume, directory listing, or approved AppleScript utilities.",
+        "description": "Battery, legacy volume set, directory listing, or custom AppleScript.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -152,5 +230,12 @@ TOOL_HANDLERS: dict[str, ToolHandler] = {
     "create_directory": create_directory,
     "control_media_player": control_media_player,
     "headless_web_scrape": headless_web_scrape,
+    "control_volume": control_volume,
+    "lock_screen": lock_screen,
+    "capture_screenshot": capture_screenshot,
+    "set_appearance": set_appearance,
+    "open_application": open_application,
+    "show_notification": show_notification,
+    "get_system_info": get_system_info,
     "execute_system_script": execute_system_script,
 }

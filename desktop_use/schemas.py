@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from enum import StrEnum
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -46,3 +47,14 @@ class HealthResponse(BaseModel):
     anthropic_configured: bool
     playwright_available: bool
     tools: list[str]
+
+
+class ToolInvokeRequest(BaseModel):
+    arguments: dict[str, Any] = Field(default_factory=dict)
+
+
+class ToolInvokeResponse(BaseModel):
+    tool: str
+    success: bool
+    result: dict[str, Any] = Field(default_factory=dict)
+    error: str | None = None

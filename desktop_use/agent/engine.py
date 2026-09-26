@@ -40,7 +40,12 @@ class AgentEngine:
         except ImportError as error:
             raise RuntimeError("anthropic package is required. Run: uv pip install anthropic") from error
 
-        client = AsyncAnthropic(api_key=self.api_key)
+        client_kwargs: dict[str, Any] = {"api_key": self.api_key}
+        if config.ANTHROPIC_WORKSPACE_ID:
+            client_kwargs["default_headers"] = {
+                "anthropic-workspace-id": config.ANTHROPIC_WORKSPACE_ID,
+            }
+        client = AsyncAnthropic(**client_kwargs)
         messages: list[dict[str, Any]] = [{"role": "user", "content": user_message.strip()}]
         tool_results: list[dict[str, Any]] = []
         started = time.perf_counter()

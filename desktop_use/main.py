@@ -7,7 +7,9 @@ from fastapi import BackgroundTasks, FastAPI, HTTPException
 
 from desktop_use import config
 from desktop_use.agent.engine import AgentEngine
-from desktop_use.tools.registry import TOOL_HANDLERS
+from desktop_use.tools.invoke import invoke_tool
+from desktop_use.tools.registry import TOOL_DEFINITIONS, TOOL_HANDLERS
+from desktop_use.tools.system_utils import SystemUtilsError
 from desktop_use.schemas import (
     AgentExecuteRequest,
     AgentExecuteResponse,
@@ -16,6 +18,8 @@ from desktop_use.schemas import (
     AgentTaskStatus,
     HealthResponse,
     TaskStatus,
+    ToolInvokeRequest,
+    ToolInvokeResponse,
 )
 from desktop_use.task_store import TASK_STORE
 
@@ -56,6 +60,23 @@ def health() -> HealthResponse:
     )
 
 
+@app.get("/api/v1/tools")
+def list_tools() -> list[dict]:
+    return TOOL_DEFINITIONS
+
+
+@app.post("/api/v1/tools/{tool_name}/invoke", response_model=ToolInvokeResponse)
+async def invoke_tool_endpoint(tool_name: str, body: ToolInvokeRequest) -> ToolInvokeResponse:
+    """Run a single tool directly (no LLM) — for integration tests and debugging."""
+    if tool_name not in TOOL_HANDLERS:
+        raise HTTPException(status_code=404, detail=f"Unknown tool: {tool_name}")
+    try:
+        result = await invoke_tool(tool_name, body.arguments)
+        return ToolInvokeResponse(tool=tool_name, success=True, result=result)
+    except (SystemUtilsError, KeyError, ValueError, TypeError) as error:
+        return ToolInvokeResponse(tool=tool_name, success=False, error=str(error))
+
+
 @app.post("/api/v1/agent/execute", response_model=AgentExecuteResponse)
 async def agent_execute(body: AgentExecuteRequest) -> AgentExecuteResponse:
     engine = AgentEngine()
@@ -65,6 +86,10 @@ async def agent_execute(body: AgentExecuteRequest) -> AgentExecuteResponse:
         raise HTTPException(status_code=503, detail=str(error)) from error
     except RuntimeError as error:
         raise HTTPException(status_code=500, detail=str(error)) from error
+    except Exception as error:
+        if getattr(error.__class__, "__module__", "").startswith("anthropic"):
+            raise HTTPException(status_code=502, detail=str(error)) from error
+        raise
     return AgentExecuteResponse(**result)
 
 
