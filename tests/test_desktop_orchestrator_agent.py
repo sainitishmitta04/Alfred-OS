@@ -39,3 +39,18 @@ async def test_run_desktop_agent_delegates_to_engine():
     assert result.success is True
     assert result.data["latency_ms"] == 42
     engine_cls.return_value.run.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("results, success", [
+    ([{"tool": "execute_system_script", "result": '{"error": "Safari is not installed"}'},
+      {"tool": "execute_system_script", "result": '{"output": ""}'}], True),    # recovered: the run worked
+    ([{"tool": "list_directory", "result": '{"entries": []}'},
+      {"tool": "delete_file", "result": '{"error": "not allowed"}'}], False),   # ended on an error
+])
+async def test_run_is_judged_by_its_last_tool_call(results, success):
+    outcome = {"summary": "…", "tool_results": results, "latency_ms": 1}
+    with patch("desktop_use.agent.engine.AgentEngine") as engine_cls:
+        engine_cls.return_value.run = AsyncMock(return_value=outcome)
+        result = await run_desktop_agent("open the browser", _ctx())
+    assert result.success is success

@@ -8,7 +8,8 @@ from orchestrator.agents.base import AgentContext, AgentResult
 
 DESKTOP_AGENT_DESCRIPTION = (
     "Requires local file read/search/write/move/delete, listing folders, screenshots, "
-    "media control, volume/battery checks, or app actions tied to local files — not general web browsing."
+    "media control, volume/battery checks, app actions tied to local files, or the user's notes, "
+    "reminders and calendar (Apple Notes, Obsidian, Reminders, Calendar) — not general web browsing."
 )
 
 
@@ -37,10 +38,10 @@ async def run_desktop_agent(goal: str, ctx: AgentContext) -> AgentResult:
         return AgentResult(text=str(error), success=False)
 
     summary = outcome.get("summary", "Done.")
-    success = not any(
-        "error" in str(item.get("result", ""))
-        for item in outcome.get("tool_results", [])
-    )
+    # The agent often recovers from a failed first attempt (a wrong path, an app that isn't installed) and
+    # then succeeds, so judge the run by its last tool call rather than by any error along the way.
+    results = outcome.get("tool_results", [])
+    success = not results or "error" not in str(results[-1].get("result", ""))
     return AgentResult(
         text=summary,
         success=success,

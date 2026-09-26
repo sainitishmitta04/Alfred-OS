@@ -158,9 +158,9 @@ class ClaudeRouter:
 
 # --- Offline keyword router -----------------------------------------------------------------------
 _KEYWORDS: dict[str, tuple[str, ...]] = {
-    "knowledge": ("note", "notes", "obsidian", "vault", "journal", "knowledge"),
     "browser": ("search", "google", "web", "website", "linkedin", "twitter", "online", "look up", "news", "browse"),
-    "desktop": ("file", "files", "folder", "document", "pdf", "screenshot", "downloads", "desktop"),
+    "desktop": ("file", "files", "folder", "document", "pdf", "screenshot", "downloads", "desktop",
+                "note", "notes", "obsidian", "vault", "journal", "reminder", "calendar"),
     "direct": ("volume", "mute", "play", "pause", "brightness", "lock", "open", "launch"),
 }
 _DESTRUCTIVE_WORDS = re.compile(r"\b(delete|remove|erase|wipe|overwrite|replace|trash|rm|clear|format|send|post|drop)\b", re.I)
