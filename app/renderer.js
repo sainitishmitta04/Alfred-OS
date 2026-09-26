@@ -4,13 +4,8 @@ const pill = $('#pill'), label = $('#pill .label'), card = $('#card');
 const bars = [...document.querySelectorAll('.bar')];
 const RELEASE_TAIL_MS = 150; // keep recording briefly after the second tap so the last syllable isn't cut off
 
-const ICONS = {
-  ok: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>',
-  fail: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>',
-  neutral: '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="4"/></svg>',
-};
-
 let rec = null, ctx = null, startedAt = 0, hideTimer = 0;
+let asking = null;  // session id of the question the card shows
 let gen = 0;      // bumps on every hotkey on/off, so a start() still waiting for the mic knows it was overtaken
 let live = false; // recording now: status updates about the previous take must not repaint the pill
 
@@ -93,21 +88,30 @@ function meter(analyser) {
 }
 
 // ---------- states from main ----------
+// Tasks run in the background: the overlay only says "On it", tells you when one is done, and holds a question
+// on screen while a task waits for your yes or no. Everything else lives in the Tasks window.
 alfred.onState((s) => {
   switch (s.type) {
     case 'transcribing': return status('busy', `Transcribing · ${s.stt}`);
-    case 'thinking':
-      status('busy', 'Thinking…');
-      return render({ heard: s.heard, chips: s.sttMs ? [sttChip(s)] : [], skeleton: true });
-    case 'result':
+    case 'accepted':
       status('idle');
-      render({ kind: s.status === 'failed' ? 'error' : '', heard: s.heard, answer: s.response_text, steps: s.steps, chips: chips(s) });
-      return autoHide(12000);
+      render({ kind: 'toast', heard: s.transcript, answer: s.note || 'On it', chips: taskChips(s) });
+      return autoHide(2500);
+    case 'done':
+      status('idle');
+      render({
+        kind: `toast ${s.status === 'failed' ? 'error' : ''}`, heard: s.transcript,
+        answer: firstLine(s.response_text) || (s.status === 'cancelled' ? 'Cancelled' : 'Done'),
+        chips: taskChips(s), hint: 'Click for all tasks',
+      });
+      return autoHide(6000);
     case 'confirm':
       status('idle');
+      asking = s.session_id;
       return render({
-        kind: 'confirm', heard: s.heard, answer: s.response_text, steps: s.steps, chips: chips(s), actions: true,
-        hint: s.note || 'Or tap ⌥Space and say "yes" or "no".',
+        kind: 'confirm', heard: s.transcript, answer: s.response_text, steps: (s.steps || []).slice(-4),
+        chips: taskChips(s), actions: true,
+        hint: [s.note, s.more ? `${s.more} more waiting` : '', 'Or tap ⌥Space and say "yes" or "no".'].filter(Boolean).join(' · '),
       });
     case 'error':
       status('idle');
@@ -124,70 +128,37 @@ function setPill(state, text = '') {
   label.textContent = text;
 }
 
-function render({ kind = '', heard = '', answer = '', hint = '', steps = [], chips = [], actions = false, skeleton = false }) {
+function render({ kind = '', heard = '', answer = '', hint = '', steps = [], chips = [], actions = false }) {
   clearTimeout(hideTimer);
+  if (!kind.includes('confirm')) asking = null;
   card.className = `card ${kind}`;
   card.hidden = false;
   card.querySelector('.heard').textContent = heard ? `“${heard}”` : '';
   card.querySelector('.answer').textContent = answer;
   card.querySelector('.hint').textContent = hint;
-
-  const list = card.querySelector('.steps');
-  list.replaceChildren(...(steps || []).slice(-6).map((st) => {
-    const li = document.createElement('li');
-    const state = st.success === true || st.success === 1 ? 'ok' : st.success === false || st.success === 0 ? 'fail' : 'neutral';
-    li.innerHTML = ICONS[state]; // static SVG only; step text goes in via textContent below
-    li.firstChild.classList.add(state);
-    const text = document.createElement('span');
-    const b = document.createElement('b');
-    b.textContent = st.action;
-    text.append(b, st.detail ? ` ${st.detail}` : '');
-    li.append(text);
-    return li;
-  }));
-
-  const row = card.querySelector('.chips');
-  row.replaceChildren(...chips.map(([text, cls]) => {
-    const c = document.createElement('span');
-    c.className = `chip ${cls || ''}`;
-    c.textContent = text;
-    return c;
-  }));
-  if (skeleton) row.append(...[1, 2].map(() => Object.assign(document.createElement('span'), { className: 'chip skeleton' })));
-
+  card.querySelector('.steps').replaceChildren(...stepEls(steps));
+  card.querySelector('.chips').replaceChildren(...chipEls(chips));
   card.querySelector('.actions').hidden = !actions;
-}
-
-const ms = (n) => (n >= 1000 ? `${(n / 1000).toFixed(1)} s` : `${Math.round(n)} ms`);
-const sttChip = (s) => [`STT ${s.stt} · ${ms(s.sttMs)}`];
-const ROUTERS = { jev: 'Jev', jev_low_confidence: 'Jev', claude_fallback: 'Claude', keyword: 'Keywords' };
-
-function chips(s) {
-  const out = [];
-  if (s.route) {
-    const conf = typeof s.route_confidence === 'number' ? ` · ${s.route_confidence.toFixed(2)}` : '';
-    out.push([`${s.route}${s.route_source ? ` · ${ROUTERS[s.route_source] || s.route_source}` : ''}${conf}`, 'route']);
-  }
-  if (s.sttMs) out.push(sttChip(s));
-  if (s.jev_latency_ms != null) out.push([`${ROUTERS[s.route_source] || 'Router'} ${ms(s.jev_latency_ms)}`]);
-  if (s.agent_latency_ms != null) out.push([`agent ${ms(s.agent_latency_ms)}`]);
-  if (s.latency_ms != null) out.push([`total ${ms((s.sttMs || 0) + s.latency_ms)}`]);
-  return out;
 }
 
 function autoHide(after) {
   clearTimeout(hideTimer);
   hideTimer = setTimeout(() => {
     card.classList.add('leaving');
-    setTimeout(() => { card.hidden = true; card.classList.remove('leaving'); }, 130);
+    setTimeout(() => { card.hidden = true; card.classList.remove('leaving'); alfred.interactive(false); }, 130);
   }, after);
 }
 
-function clearCard() { clearTimeout(hideTimer); card.hidden = true; }
+function clearCard() { clearTimeout(hideTimer); card.hidden = true; alfred.interactive(false); }
 
-// ---------- confirmation buttons (the only clickable part of the overlay) ----------
-card.querySelector('.yes').addEventListener('click', () => { card.querySelector('.actions').hidden = true; alfred.answer(true); });
-card.querySelector('.no').addEventListener('click', () => { card.querySelector('.actions').hidden = true; alfred.answer(false); });
-const actions = card.querySelector('.actions');
-actions.addEventListener('mouseenter', () => alfred.interactive(true));
-actions.addEventListener('mouseleave', () => alfred.interactive(false));
+// ---------- clicks: the card is click-through except while the pointer is over it ----------
+function reply(approved) {
+  if (!asking) return;
+  card.querySelector('.actions').hidden = true;
+  alfred.answer(asking, approved);
+}
+card.querySelector('.yes').addEventListener('click', (e) => { e.stopPropagation(); reply(true); });
+card.querySelector('.no').addEventListener('click', (e) => { e.stopPropagation(); reply(false); });
+card.addEventListener('click', () => { if (card.classList.contains('toast')) { clearCard(); alfred.openTasks(); } });
+card.addEventListener('mouseenter', () => alfred.interactive(true));
+card.addEventListener('mouseleave', () => alfred.interactive(false));

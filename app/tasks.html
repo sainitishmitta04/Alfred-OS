@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; script-src 'self'">
+  <title>Alfred — Tasks</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="tasks-page">
+  <header class="tasks-head">
+    <h1>Tasks</h1>
+    <p class="muted" id="summary" aria-live="polite"></p>
+  </header>
+  <p id="empty" class="empty" hidden>No tasks yet — tap ⌥Space and ask Alfred something.</p>
+  <ol id="list" class="task-list"></ol>
+  <script src="ui.js"></script>
+  <script src="tasks.js"></script>
+</body>
+</html>
