@@ -10,12 +10,11 @@ const ENV_PATH = path.join(ROOT, '.env');
 try { process.loadEnvFile(ENV_PATH); } catch { /* no .env yet: the tray and the card say what's missing */ }
 
 const ORCH = (process.env.ORCHESTRATOR_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
-const DESKTOP = (process.env.DESKTOP_AGENT_URL || 'http://127.0.0.1:8787').replace(/\/$/, '');
 const HOTKEY = process.env.HOTKEY || 'Alt+Space';
 const W = 460, H = 330;
 
 let overlay, tasksWin, tray, quitting = false;
-let health = { orchestrator: null, desktop: null };
+let health = { orchestrator: null, clash: false };
 let recording = false;
 let sttChoice = {};               // tray override, until restart
 let takes = Promise.resolve();    // takes are transcribed in order; the tasks they start run in parallel
@@ -173,14 +172,11 @@ async function handleTake(audio, mimeType, ms) {
   return startTask(text, stt.label, sttMs);
 }
 
-// ---------- backends: start the orchestrator and the desktop service if they aren't running ----------
+// ---------- backend: start the orchestrator (which runs every agent in-process) if it isn't running ----------
 const UV = process.env.UV_BIN || ['/opt/homebrew/bin/uv', '/usr/local/bin/uv'].find((p) => fs.existsSync(p)) || 'uv';
 const SERVICES = [
   { key: 'orchestrator', name: 'Orchestrator', url: ORCH, cwd: ROOT, ours: (h) => Array.isArray(h?.agents),
     args: ['run', 'uvicorn', 'orchestrator.main:app', '--host', '127.0.0.1', '--port', new URL(ORCH).port || '8000'] },
-  { key: 'desktop', name: 'Desktop agent', url: DESKTOP, cwd: path.join(ROOT, 'desktop-use', 'backend'),
-    ours: (h) => Array.isArray(h?.tools),
-    args: ['run', '--env-file', ENV_PATH, 'uvicorn', 'app.main:app', '--host', '127.0.0.1', '--port', new URL(DESKTOP).port || '8787'] },
 ];
 
 async function probe(url) {
@@ -204,11 +200,8 @@ async function startServices() {
 
 // ---------- tray, windows ----------
 async function checkHealth() {
-  const [o, d] = await Promise.all(SERVICES.map((s) => probe(s.url)));
-  health = {
-    orchestrator: SERVICES[0].ours(o) ? o : null, desktop: SERVICES[1].ours(d) ? d : null,
-    clash: [o && !SERVICES[0].ours(o) && ORCH, d && !SERVICES[1].ours(d) && DESKTOP].filter(Boolean),
-  };
+  const o = await probe(ORCH);
+  health = { orchestrator: SERVICES[0].ours(o) ? o : null, clash: Boolean(o) && !SERVICES[0].ours(o) };
   buildTray();
 }
 
@@ -232,13 +225,12 @@ function buildTray() {
     checked: Boolean(cur && cur.provider === id && cur.model === model),
     click: () => { sttChoice = { provider: id, model }; buildTray(); },
   })));
-  const { orchestrator: o, desktop: d, clash = [] } = health;
+  const { orchestrator: o, clash } = health;
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: 'Show tasks', click: showTasks },
     { type: 'separator' },
-    ...clash.map((url) => ({ label: `${url} is used by another app: set a free port in .env`, enabled: false })),
+    ...(clash ? [{ label: `${ORCH} is used by another app: set ORCHESTRATOR_URL in .env`, enabled: false }] : []),
     { label: o ? `Orchestrator online · ${o.agents.join(', ')}${o.jev ? ' · Jev' : ''}` : `Orchestrator offline (${ORCH})`, enabled: false },
-    { label: d ? `Desktop agent online${d.anthropic_configured ? '' : ' · no Anthropic key'}` : `Desktop agent offline (${DESKTOP})`, enabled: false },
     { label: `${HOTKEY.replace('Alt', '⌥')} to talk, again to send · Esc cancels`, enabled: false },
     { type: 'separator' },
     { label: 'Speech-to-text (until restart)', submenu: sttItems },

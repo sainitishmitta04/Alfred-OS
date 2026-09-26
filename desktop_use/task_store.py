@@ -4,7 +4,7 @@ import uuid
 from dataclasses import dataclass, field
 from threading import Lock
 
-from app.schemas import TaskStatus
+from desktop_use.schemas import TaskStatus
 
 
 @dataclass
