@@ -27,6 +27,9 @@ class AgentContext:
     transcript: str
     settings: Any
     _log_step: StepLogger
+    # True when the user already approved this request (destructive-action confirmation), so agents may
+    # skip asking again for the action the user just approved.
+    approved: bool = False
 
     def step(self, action: str, detail: str | None = None, success: bool | None = True) -> None:
         self._log_step(action, detail, success)
