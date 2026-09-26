@@ -94,9 +94,10 @@ class Orchestrator:
         }
 
     # --- public API -------------------------------------------------------------------------------
-    async def handle_transcript(self, transcript: str) -> dict[str, Any]:
+    async def handle_transcript(self, transcript: str, session_id: str | None = None) -> dict[str, Any]:
+        """`session_id` lets a caller that runs this in the background (POST /tasks) hand out the id first."""
         start = time.perf_counter()
-        session_id = uuid.uuid4().hex
+        session_id = session_id or uuid.uuid4().hex
         transcript = transcript.strip()
         self.db.log_session(session_id, transcript)
         self.bus.publish("session", session_id=session_id, transcript=transcript)
