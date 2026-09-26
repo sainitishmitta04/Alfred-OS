@@ -109,7 +109,9 @@ class BrowserSettings:
             mcp_config_path=Path(_env("BROWSER_MCP_CONFIG", str(ROOT / "mcp_servers.json"))),
             tool_denylist={t.strip() for t in _env(
                 "BROWSER_TOOL_DENYLIST",
-                "playwright__browser_run_code_unsafe,playwright__browser_file_upload,playwright__browser_drag,playwright__browser_drop",
+                "playwright__browser_run_code_unsafe,playwright__browser_file_upload,playwright__browser_drag,playwright__browser_drop,"
+                "playwright_visible__browser_run_code_unsafe,playwright_visible__browser_file_upload,"
+                "playwright_visible__browser_drag,playwright_visible__browser_drop",
             ).split(",") if t.strip()},
         )
 

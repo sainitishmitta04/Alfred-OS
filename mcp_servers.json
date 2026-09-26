@@ -3,19 +3,55 @@
   "servers": {
     "playwright": {
       "command": "npx",
-      "args": ["-y", "@playwright/mcp@0.0.82", "--isolated", "--output-dir", "${ALFRED_TMP}/playwright"],
+      "args": [
+        "-y",
+        "@playwright/mcp@0.0.82",
+        "--isolated",
+        "--output-dir",
+        "${ALFRED_TMP}/playwright"
+      ],
       "args_if_env": {
-        "BROWSER_HEADLESS=true": ["--headless"],
-        "PLAYWRIGHT_EXECUTABLE": ["--executable-path", "${PLAYWRIGHT_EXECUTABLE}"],
-        "BROWSER_NO_SANDBOX=true": ["--no-sandbox"]
+        "BROWSER_HEADLESS=true": [
+          "--headless"
+        ],
+        "PLAYWRIGHT_EXECUTABLE": [
+          "--executable-path",
+          "${PLAYWRIGHT_EXECUTABLE}"
+        ],
+        "BROWSER_NO_SANDBOX=true": [
+          "--no-sandbox"
+        ]
+      },
+      "startup_timeout_s": 90
+    },
+    "playwright_visible": {
+      "_comment": "A visible browser window with sound, for tasks the user wants to watch or hear (play music, show a page). Its tools are playwright_visible__*.",
+      "enabled_if_env": "BROWSER_VISIBLE=true",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@playwright/mcp@0.0.82",
+        "--isolated",
+        "--output-dir",
+        "${ALFRED_TMP}/playwright-visible"
+      ],
+      "args_if_env": {
+        "BROWSER_NO_SANDBOX=true": [
+          "--no-sandbox"
+        ]
       },
       "startup_timeout_s": 90
     },
     "brave": {
       "enabled_if_env": "BRAVE_API_KEY",
       "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-brave-search"],
-      "env": {"BRAVE_API_KEY": "${BRAVE_API_KEY}"}
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-brave-search"
+      ],
+      "env": {
+        "BRAVE_API_KEY": "${BRAVE_API_KEY}"
+      }
     }
   }
 }
