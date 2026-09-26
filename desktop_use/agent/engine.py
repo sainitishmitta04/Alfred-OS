@@ -6,69 +6,12 @@ import time
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from app import config
-from app.agent.prompts import ALFRED_SYSTEM_PROMPT
-from app.tools.desktop_control import control_media_player
-from app.tools.system_utils import SystemUtilsError, execute_system_script
-from app.tools.web_browser import headless_web_scrape
+from desktop_use import config
+from desktop_use.agent.prompts import ALFRED_SYSTEM_PROMPT
+from desktop_use.tools.registry import TOOL_DEFINITIONS, TOOL_HANDLERS
+from desktop_use.tools.system_utils import SystemUtilsError
 
-ToolHandler = Callable[..., Awaitable[dict[str, Any]]]
-
-TOOL_DEFINITIONS: list[dict[str, Any]] = [
-    {
-        "name": "control_media_player",
-        "description": "Control Spotify or Apple Music in the background (play, pause, next, previous).",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "action": {
-                    "type": "string",
-                    "enum": ["play", "pause", "next", "previous", "toggle_play_pause"],
-                },
-                "track_or_playlist": {"type": "string", "description": "Optional search query."},
-            },
-            "required": ["action"],
-        },
-    },
-    {
-        "name": "headless_web_scrape",
-        "description": "Headless browser read or interact with a web page without focus stealing.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "url": {"type": "string"},
-                "action": {
-                    "type": "string",
-                    "enum": ["extract_text", "extract_html", "fill_input", "click"],
-                },
-                "selector": {"type": "string"},
-                "input_value": {"type": "string"},
-            },
-            "required": ["url", "action"],
-        },
-    },
-    {
-        "name": "execute_system_script",
-        "description": "Battery, volume, directory listing, or approved AppleScript utilities.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "command_type": {
-                    "type": "string",
-                    "enum": ["battery_status", "set_volume", "list_project_files", "run_osascript"],
-                },
-                "args": {"type": "object", "additionalProperties": True},
-            },
-            "required": ["command_type"],
-        },
-    },
-]
-
-TOOL_HANDLERS: dict[str, ToolHandler] = {
-    "control_media_player": control_media_player,
-    "headless_web_scrape": headless_web_scrape,
-    "execute_system_script": execute_system_script,
-}
+ToolCallback = Callable[[str, dict[str, Any], dict[str, Any]], None]
 
 
 class AgentEngine:
@@ -84,9 +27,13 @@ class AgentEngine:
         self.model = model or config.ALFRED_AGENT_MODEL
         self.max_tool_rounds = max_tool_rounds or config.ALFRED_MAX_TOOL_ROUNDS
 
-    async def run(self, user_message: str) -> dict[str, Any]:
+    async def run(
+        self,
+        user_message: str,
+        on_tool: ToolCallback | None = None,
+    ) -> dict[str, Any]:
         if not self.api_key:
-            raise ValueError("ANTHROPIC_API_KEY is not set; add it to Alfred backend .env")
+            raise ValueError("ANTHROPIC_API_KEY is not set; add it to .env at the repo root")
 
         try:
             from anthropic import AsyncAnthropic
@@ -138,13 +85,16 @@ class AgentEngine:
 
             async def _invoke(tool_use: Any) -> dict[str, Any]:
                 handler = TOOL_HANDLERS.get(tool_use.name)
+                tool_input = dict(tool_use.input) if isinstance(tool_use.input, dict) else {}
                 if handler is None:
                     payload = {"error": f"Unknown tool: {tool_use.name}"}
                 else:
                     try:
-                        payload = await handler(**tool_use.input)
+                        payload = await handler(**tool_input)
                     except (SystemUtilsError, Exception) as error:  # noqa: BLE001
                         payload = {"error": str(error)}
+                if on_tool is not None:
+                    on_tool(tool_use.name, tool_input, payload)
                 return {
                     "type": "tool_result",
                     "tool_use_id": tool_use.id,
