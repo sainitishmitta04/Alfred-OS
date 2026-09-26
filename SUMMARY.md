@@ -43,7 +43,7 @@ orchestrator/
     registry.py  discovery: built-ins → pip entry points (alfred.agents) → AGENT_OVERRIDES env
     adapters.py  wraps `async def run_x_agent(goal) -> str` into an Agent
     mocks.py     direct / browser / desktop / knowledge mocks (# MOCK — replace)
-tests/           52 pytest tests (no network except a local stdio MCP server)
+tests/           59 pytest tests (no network except a local stdio MCP server)
 test_cli.py      end-to-end CLI with interactive confirmation
 docs/EXTENDING.md  how teammates plug in their agents
 ```
@@ -82,7 +82,7 @@ uv run pytest -q
 `AGENT_OVERRIDES`, `CORS_ORIGINS`.
 
 ## Verified
-- `pytest`: 52/52 pass (27 at the time of the first commit). Covers routing policy, confirmation approve/decline/double-confirm, timeout, agent/router
+- `pytest`: 59/59 pass (27 at the time of the first commit). Covers routing policy, confirmation approve/decline/double-confirm, timeout, agent/router
   exceptions, hooks, plugin overrides, the API, and SSE events.
 - Live against the real Jev API. All 6 sample commands were routed correctly (direct/browser/knowledge/desktop),
   Jev latency was about 130–200ms, "delete everything in my downloads folder" was flagged destructive and paused
@@ -94,7 +94,7 @@ The real `browser` agent. It replaces the mock through `AGENT_OVERRIDES=browser=
 
 ```
 goal ─► Jev Noul "multi-step?" ─► (yes) Planner LLM splits into ≤4 sub-tasks (same-site flows stay together)
-     ─► per sub-task tool loop (OpenRouter free model picks tools):
+     ─► per sub-task tool loop (Gemini free Flash model picks tools; OpenRouter free models as fallback):
           tools = built-ins (web_search via DuckDuckGo, fetch_url) + every MCP server in mcp_servers.json
                   (Playwright MCP: 25 browser tools) + finish / ask_user
           every non-read-only call ─► Jev Noul "irreversible?" on the resolved element + keyword floor
@@ -107,7 +107,7 @@ goal ─► Jev Noul "multi-step?" ─► (yes) Planner LLM splits into ≤4 sub
 | Piece | File | Notes |
 |---|---|---|
 | Agent loop | `browser_agent/agent.py` | Step and time budgets, pause/resume state, history compaction, one shared browser (locked) |
-| LLM | `browser_agent/llm.py` | OpenRouter via `openai` SDK. Rotates through free tool-capable models with cooldowns and backoff rounds, and fails fast on the daily quota |
+| LLM | `browser_agent/llm.py` | `LLMRouter` tries providers in `LLM_PROVIDERS` order: **Gemini** first (OpenAI-compatible endpoint; auto-picks the newest Flash models; low reasoning effort for speed; echoes back Gemini 3 `thought_signature`), then **OpenRouter** free models. Each provider rotates models with cooldowns and backoff, and a model out of daily quota is skipped for the day |
 | MCP | `browser_agent/mcp_pool.py`, `mcp_servers.json` | Any stdio or streamable-http MCP server. Each runs in its own task, tools are namespaced `server__tool`, a crashed server restarts on next use |
 | Jev | `browser_agent/decisions.py` | `is_multi_step`, `risky`, `review_step` |
 | Planner | `browser_agent/planner.py` | Plan and synthesize, with a keyword fallback if Jev is down |
@@ -116,21 +116,28 @@ goal ─► Jev Noul "multi-step?" ─► (yes) Planner LLM splits into ≤4 sub
 Engine addition: `ConfirmationRequired(prompt, state)` plus `Agent.resume()` / `Agent.cancel()`, so **any** agent can pause
 partway through a task for approval. Covered by `tests/test_engine_pause.py`.
 
-**Live-verified (real OpenRouter + Jev + Playwright):**
-- "latest stable Python release" → web_search, then fetch_url → "3.14.7" in 21s.
-- "HN top story + summarize" → navigated HN and summarized the story.
-- httpbin order form → typed the name, then paused before "Submit order" (Jev 0.71 plus the keyword check).
-- Wired into the server: Jev routes to `browser` at confidence 1.00.
+**Live-verified on Gemini (`gemini-3.8-flash` / `3.7-flash`) + Jev + Playwright:**
+- Multi-chain: "HN top 3 stories, then search the web for more about the first one" → 2 sub-tasks. It navigated and snapshotted HN, listed the 3 titles, then ran a web search and summarized story 1 (56s, including free-tier 503/429 retries).
+- Form, through the server over HTTP: the orchestrator asked once up front, and after approval the agent navigated, typed the name (Jev risk 0.09, so no pause) and clicked "Submit order". Jev scored that click 0.75 and the keyword check fired, but it was auto-approved because the user had already approved this request. httpbin echoed `custname: Alfred`.
+- Quick lookup: "current bitcoin price" → web_search → answer in 8s.
+- Gemini steps take about 1–3s with `reasoning_effort=low`.
+- Earlier runs on OpenRouter only: "latest Python release" answered 3.14.7 in 21s, and HN summarize worked.
+
+**Pause rules:**
+- If the user approved the request up front, the first risky action runs without asking again.
+- Any later risky action still pauses (tested).
+- `test_cli.py` handles repeated confirmations.
 
 **Known limits:**
-- The OpenRouter free tier allows **50 requests/day without credits** (1000/day after a one-time $10 credit purchase). Testing hit this cap, and the agent now answers "quota used up" instead of hanging.
-- Free models get 429s upstream often; rotation and backoff handle the transient ones.
+- **Gemini free tier:** per-minute limits and occasional 503 "high demand" errors. The agent rotates across 3 Flash models, then falls back to OpenRouter.
+- **OpenRouter free tier:** 50 requests/day without credits.
+- **Quota exhausted:** when every provider is out, the agent says so in one sentence instead of hanging.
 
 **Server setup that was needed (Linux):** Playwright browser (`npx @playwright/mcp install-browser chrome-for-testing`),
 plus Chromium system libraries and fonts through zypper. With no fonts installed, Chromium crashes on text-heavy pages. On macOS none of this is needed.
 
 ## Next steps
-- Add OpenRouter credits (or a paid model in `OPENROUTER_MODELS`) for demo-day reliability.
+- For demo-day reliability, enable billing on the Gemini key (or pin `GEMINI_MODELS`), and/or add OpenRouter credits.
 - Optional: a Brave Search MCP (`BRAVE_API_KEY`) and a logged-in browser profile (drop `--isolated`, add `--user-data-dir`) for LinkedIn flows.
 - Teammates register their Desktop and Knowledge agents.
 - Optional: add a Haiku goal-cleanup step as a `before_dispatch` hook.

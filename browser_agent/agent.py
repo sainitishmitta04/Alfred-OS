@@ -1,4 +1,4 @@
-"""Alfred Browser Agent: plan -> per-sub-task tool loop (OpenRouter LLM + MCP tools, Jev decisions) -> synthesize.
+"""Alfred Browser Agent: plan -> per-sub-task tool loop (Gemini/OpenRouter LLM + MCP tools, Jev decisions) -> synthesize.
 
 Plug in with:  AGENT_OVERRIDES=browser=browser_agent:BrowserAgent
 """
@@ -16,7 +16,7 @@ from typing import Any
 from browser_agent import prompts
 from browser_agent.config import BrowserSettings, load_mcp_servers
 from browser_agent.decisions import JevDecider
-from browser_agent.llm import DailyQuotaExceeded, LLMUnavailable, OpenRouterClient, ToolCall
+from browser_agent.llm import DailyQuotaExceeded, LLMUnavailable, LLMRouter, ToolCall, build_llm
 from browser_agent.mcp_pool import MCPPool
 from browser_agent.planner import Planner
 from browser_agent.tools import ASK_USER, CONTROL_TOOLS, FINISH, ToolResult, ToolSpec, builtin_tools
@@ -43,6 +43,7 @@ class RunState:
     pending_calls: list[ToolCall] = field(default_factory=list)   # calls from the last LLM turn not yet executed
     approved_call_id: str | None = None
     last_page: str = ""
+    pre_approval_used: bool = False
 
 
 def describe_target(arguments: dict[str, Any], page: str) -> str:
@@ -72,7 +73,7 @@ class BrowserAgent(Agent):
     description = ("Requires live website interaction — web search, social media, forms, "
                    "looking things up or reading pages online")
 
-    def __init__(self, settings: BrowserSettings | None = None, *, llm: OpenRouterClient | None = None,
+    def __init__(self, settings: BrowserSettings | None = None, *, llm: LLMRouter | None = None,
                  decider: JevDecider | None = None, pool: MCPPool | None = None,
                  extra_tools: list[ToolSpec] | None = None) -> None:
         self.settings = settings or BrowserSettings.from_env()
@@ -91,10 +92,7 @@ class BrowserAgent(Agent):
             return
         s = self.settings
         if self.llm is None:
-            if not s.openrouter_api_key:
-                raise RuntimeError("OPENROUTER_API_KEY is not set")
-            self.llm = OpenRouterClient(s.openrouter_api_key, s.models, base_url=s.openrouter_base_url,
-                                        timeout_s=s.llm_timeout_s)
+            self.llm = build_llm(s)   # Gemini first, OpenRouter fallback (LLM_PROVIDERS)
             await self.llm.validate_models()
         if self.decider is None:
             jev = None
@@ -239,6 +237,11 @@ class BrowserAgent(Agent):
             risky = keyword or (score is not None and score >= self.settings.risky_threshold)
             ctx.step("jev_risk_check", f"{call.name} on {target or '?'}: jev={'n/a' if score is None else f'{score:.2f}'}"
                      f" keyword={keyword}", not risky)
+            if risky and ctx.approved and not state.pre_approval_used:
+                # The user already approved this exact request up front; don't ask twice for the first risky step.
+                state.pre_approval_used = True
+                ctx.step("risk_pre_approved", "user approved this request before dispatch", True)
+                risky = False
             if risky:
                 action = call.name.split("__")[-1].replace("browser_", "").replace("_", " ")
                 raise ConfirmationRequired(f"Before I continue: {action} {target or _summarize_args(call.arguments, 120)}"

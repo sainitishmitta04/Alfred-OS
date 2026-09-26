@@ -148,7 +148,7 @@ class Orchestrator:
                 return self._response(session_id)
 
             state = {"session_id": session_id, "transcript": session["transcript"],
-                     "goal": session["goal"] or session["transcript"], "route": session["route"]}
+                     "goal": session["goal"] or session["transcript"], "route": session["route"], "approved": True}
             try:
                 return await self._dispatch(session_id, state, start, resume_state=paused)
             except Exception as exc:
@@ -181,6 +181,7 @@ class Orchestrator:
         self.db.update_session(session_id, goal=goal)
         self._step(session_id, route, "resume" if resuming else "dispatch", goal)
         ctx = AgentContext(session_id=session_id, agent=route, transcript=state["transcript"], settings=self.settings,
+                           approved=bool(state.get("approved")),
                            _log_step=lambda action, detail=None, success=True: self._step(session_id, route, action, detail, success))
 
         timeout = agent.timeout_s or self.settings.agent_timeout_s

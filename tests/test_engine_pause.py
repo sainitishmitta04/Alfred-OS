@@ -37,3 +37,20 @@ async def test_mid_task_pause_decline_calls_cancel(make_engine, registry):
     r = await e.handle_transcript("fill the form")
     r2 = await e.confirm(r["session_id"], False)
     assert r2["status"] == "cancelled" and agent.cancelled == {"progress": 1}
+
+
+async def test_confirmed_dispatch_marks_ctx_approved(make_engine, registry):
+    seen = {}
+
+    class Recorder(Agent):
+        name, description = "rec", "records ctx"
+
+        async def run(self, goal, ctx):
+            seen["approved"] = ctx.approved
+            return "ok"
+
+    registry.register(Recorder())
+    e = make_engine(StubRouter("rec", destructive=True))
+    r = await e.handle_transcript("delete x")
+    await e.confirm(r["session_id"], True)
+    assert seen["approved"] is True
