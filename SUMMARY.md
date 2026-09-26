@@ -1,4 +1,4 @@
-# Alfred OS — Orchestration Engine: Summary
+# Alfred OS — Orchestration Engine + Browser Agent: Summary
 
 ## What it is
 The central "brain" of Alfred. It takes a voice transcript, uses **Jev** (TypeSafe AI System One) to decide
@@ -43,7 +43,7 @@ orchestrator/
     registry.py  discovery: built-ins → pip entry points (alfred.agents) → AGENT_OVERRIDES env
     adapters.py  wraps `async def run_x_agent(goal) -> str` into an Agent
     mocks.py     direct / browser / desktop / knowledge mocks (# MOCK — replace)
-tests/           27 pytest tests (no network)
+tests/           52 pytest tests (no network except a local stdio MCP server)
 test_cli.py      end-to-end CLI with interactive confirmation
 docs/EXTENDING.md  how teammates plug in their agents
 ```
@@ -82,14 +82,55 @@ uv run pytest -q
 `AGENT_OVERRIDES`, `CORS_ORIGINS`.
 
 ## Verified
-- `pytest`: 27/27 pass. Covers routing policy, confirmation approve/decline/double-confirm, timeout, agent/router
+- `pytest`: 52/52 pass (27 at the time of the first commit). Covers routing policy, confirmation approve/decline/double-confirm, timeout, agent/router
   exceptions, hooks, plugin overrides, the API, and SSE events.
 - Live against the real Jev API. All 6 sample commands were routed correctly (direct/browser/knowledge/desktop),
   Jev latency was about 130–200ms, "delete everything in my downloads folder" was flagged destructive and paused
   for confirmation, and the SSE stream emitted live events.
 - The Jev verifier gives mock responses low scores, which is expected until real agents are plugged in.
 
+## Browser Agent (`browser_agent/`)
+The real `browser` agent. It replaces the mock through `AGENT_OVERRIDES=browser=browser_agent:BrowserAgent`, and the engine core didn't need to change.
+
+```
+goal ─► Jev Noul "multi-step?" ─► (yes) Planner LLM splits into ≤4 sub-tasks (same-site flows stay together)
+     ─► per sub-task tool loop (OpenRouter free model picks tools):
+          tools = built-ins (web_search via DuckDuckGo, fetch_url) + every MCP server in mcp_servers.json
+                  (Playwright MCP: 25 browser tools) + finish / ask_user
+          every non-read-only call ─► Jev Noul "irreversible?" on the resolved element + keyword floor
+                                     ─► ConfirmationRequired ─► engine pauses ─► /confirm ─► resume
+          after each step          ─► Jev review: step_ok (Noul) + progress Choice{continue,done,stuck}
+                                     confident verdicts become hints ("call finish" / "change approach")
+     ─► earlier sub-task results feed later ones ─► synthesize one spoken answer
+```
+
+| Piece | File | Notes |
+|---|---|---|
+| Agent loop | `browser_agent/agent.py` | Step and time budgets, pause/resume state, history compaction, one shared browser (locked) |
+| LLM | `browser_agent/llm.py` | OpenRouter via `openai` SDK. Rotates through free tool-capable models with cooldowns and backoff rounds, and fails fast on the daily quota |
+| MCP | `browser_agent/mcp_pool.py`, `mcp_servers.json` | Any stdio or streamable-http MCP server. Each runs in its own task, tools are namespaced `server__tool`, a crashed server restarts on next use |
+| Jev | `browser_agent/decisions.py` | `is_multi_step`, `risky`, `review_step` |
+| Planner | `browser_agent/planner.py` | Plan and synthesize, with a keyword fallback if Jev is down |
+| Tools | `browser_agent/tools.py` | `@tool` decorator, `alfred.browser_tools` entry points, deny-list for unsafe Playwright tools |
+
+Engine addition: `ConfirmationRequired(prompt, state)` plus `Agent.resume()` / `Agent.cancel()`, so **any** agent can pause
+partway through a task for approval. Covered by `tests/test_engine_pause.py`.
+
+**Live-verified (real OpenRouter + Jev + Playwright):**
+- "latest stable Python release" → web_search, then fetch_url → "3.14.7" in 21s.
+- "HN top story + summarize" → navigated HN and summarized the story.
+- httpbin order form → typed the name, then paused before "Submit order" (Jev 0.71 plus the keyword check).
+- Wired into the server: Jev routes to `browser` at confidence 1.00.
+
+**Known limits:**
+- The OpenRouter free tier allows **50 requests/day without credits** (1000/day after a one-time $10 credit purchase). Testing hit this cap, and the agent now answers "quota used up" instead of hanging.
+- Free models get 429s upstream often; rotation and backoff handle the transient ones.
+
+**Server setup that was needed (Linux):** Playwright browser (`npx @playwright/mcp install-browser chrome-for-testing`),
+plus Chromium system libraries and fonts through zypper. With no fonts installed, Chromium crashes on text-heavy pages. On macOS none of this is needed.
+
 ## Next steps
-- Build the real Browser Agent (Playwright MCP + Brave MCP with a Jev per-step loop) and register it through `AGENT_OVERRIDES`.
+- Add OpenRouter credits (or a paid model in `OPENROUTER_MODELS`) for demo-day reliability.
+- Optional: a Brave Search MCP (`BRAVE_API_KEY`) and a logged-in browser profile (drop `--isolated`, add `--user-data-dir`) for LinkedIn flows.
 - Teammates register their Desktop and Knowledge agents.
 - Optional: add a Haiku goal-cleanup step as a `before_dispatch` hook.
