@@ -32,7 +32,7 @@ cd ~/dev/Alfred-OS/app && npm start
 ```
 
 - **"Alfred" appears in the menu bar.** The app starts the orchestrator itself if it isn't already running, which takes about 6 s.
-- **Open the tray menu and check the first status line.** It should read `Orchestrator online · direct, browser, desktop, knowledge · Jev`. If it says offline, see Troubleshooting.
+- **Open the tray menu and check the first status line.** It should read `Orchestrator online · direct, browser, desktop · Jev`. If it says offline, see Troubleshooting.
 - **The first recording asks for microphone access for "Electron".** Allow it.
 
 **Controls:**

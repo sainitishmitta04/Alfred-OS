@@ -48,7 +48,7 @@ async def test_everything_down_uses_keywords():
 
 async def test_keyword_router_routes():
     k = KeywordRouter()
-    assert (await k.route("open my obsidian notes", AGENT_DESC)).route == "knowledge"
+    assert (await k.route("open my obsidian notes", AGENT_DESC)).route == "desktop"
     assert (await k.route("search linkedin posts", AGENT_DESC)).route == "browser"
     assert (await k.route("mute the volume", AGENT_DESC)).route == "direct"
 
@@ -64,7 +64,7 @@ async def test_claude_router_parses_tool_use():
     class Msgs:
         async def create(self, **kw):
             assert kw["tool_choice"]["name"] == "route_request"
-            return SimpleNamespace(content=[SimpleNamespace(type="tool_use", input={"route": "knowledge", "is_destructive": False})])
+            return SimpleNamespace(content=[SimpleNamespace(type="tool_use", input={"route": "desktop", "is_destructive": False})])
 
     d = await ClaudeRouter("k", "m", client=SimpleNamespace(messages=Msgs())).route("notes", AGENT_DESC)
-    assert (d.route, d.source) == ("knowledge", "claude_fallback")
+    assert (d.route, d.source) == ("desktop", "claude_fallback")

@@ -8,7 +8,8 @@ from orchestrator.agents import Agent, AgentRegistry, AgentResult, FunctionAgent
 
 def test_discover_builtins():
     r = AgentRegistry.discover()
-    assert set(r.names()) >= {"direct", "browser", "desktop", "knowledge"}
+    assert set(r.names()) >= {"direct", "browser", "desktop"}
+    assert "knowledge" not in r.names()  # note requests go to the desktop agent
 
 
 def test_override_with_function_and_class():
