@@ -2,7 +2,7 @@
 
 Date: 2026-09-26 · Branch: `voice-input` (cut from `origin/main` at 8ac66e4) · Status: plan for review (revision 4), nothing implemented yet
 
-- Revision 2: Echo is used as a reference, not a source (Appendix A).
+- Revision 2: a prior voice app was studied for reference only, not used as a source (Appendix A).
 - Revision 3: the speech-to-text provider and model are selectable.
 - **Revision 4: connects to the orchestrator that landed on `main`.**
   - The orchestrator is a FastAPI service with Jev routing and its own SQLite log, so the hand-off is its `POST /transcript` API.
@@ -332,7 +332,7 @@ New in this revision: while a confirmation is waiting, the next take is the answ
 
 ## 7. Orchestrator client (`alfred.ts`)
 
-- **One command at a time.** A new final transcript waits for the previous command to finish, including its confirmation (Echo lesson 7771f87), and the card shows "queued".
+- **One command at a time.** A new final transcript waits for the previous command to finish, including its confirmation (a lesson from the prior app studied), and the card shows "queued".
 - **Confirmations.** While a command is `needs_confirmation`, the next take's text goes through `parseYesNo`:
   - "yes", "yeah", "yep", "sure", "go ahead", "do it" and "confirm" approve;
   - "no", "nope", "don't", "stop" and "cancel" decline;
@@ -430,9 +430,9 @@ Carried over:
 
 ---
 
-## Appendix A. Echo review (revisions 2–3, updated for this design)
+## Appendix A. Prior-art review (revisions 2–3, updated for this design)
 
-Echo is a reference only; no Echo code is copied.
+A prior voice app was studied only as prior art. None of its code is used in Alfred; the notes below are design lessons, restated in our own terms.
 
 **Ideas kept**
 - The client owns the turn boundary.
@@ -446,13 +446,13 @@ Echo is a reference only; no Echo code is copied.
 - Provider and model picked as a pair.
 - Vendor quirks in code: Sarvam's 28 s limit handled by splitting, Whisper's phrases filtered.
 - Commit lessons:
-  - the meter shows only audio that is sent (2bae1f9);
-  - hand-offs happen in order (7771f87);
-  - no speculative drafts (592feef).
+  - the meter shows only audio that is sent;
+  - hand-offs happen in order;
+  - no speculative drafts.
 
 **Drawbacks, and what Alfred does instead**
 
-| Area | Echo does | Alfred instead |
+| Area | The prior app did | Alfred instead |
 |---|---|---|
 | Capture | `ScriptProcessorNode` on the main thread, in 4096-sample chunks (about 85 ms) | AudioWorklet on the audio thread, 128-sample blocks |
 | Capture | Downsamples by picking every n-th sample, with no filter | Chromium resamples into a 16 kHz context |
@@ -484,11 +484,7 @@ Echo is a reference only; no Echo code is copied.
   - `orchestrator/main.py`, `engine.py`, `schemas.py`, `events.py`, `config.py`, `db.py`, `agents/base.py`
   - `test_cli.py`, `SUMMARY.md`, `docs/EXTENDING.md`
   - `alfred-orchestration-engine-spec.md`, `alfred-vision-and-architecture.md`
-- Echo, used as reference:
-  - `packages/echo-voice/src/audio/mic.ts`, `src/core.ts`, `src/transport.ts`
-  - `api/app/stt_live.py`, `api/app/stt_local_stream.py`
-  - `api/app/voiceflow.py`, `api/app/providers.py`, `api/app/vault.py`
-  - commits 2bae1f9, 7771f87, 592feef
+- Prior art: an earlier voice app one of us had worked on, studied for design lessons only. No code from it is used in Alfred.
 - [Electron #46143: Web Speech API fails with "network error"](https://github.com/electron/electron/issues/46143)
 - [Electron #7749: webkitSpeechRecognition and Google API keys](https://github.com/electron/electron/issues/7749)
 - [Electron globalShortcut](https://www.electronjs.org/docs/latest/api/global-shortcut)
