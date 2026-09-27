@@ -6,7 +6,9 @@ const tasks = new Map();
 const open = new Set();       // expanded rows
 const loading = new Set();    // detail requests in flight
 const FINAL = new Set(['completed', 'failed', 'cancelled']);
-const STALE_MS = 10 * 60 * 1000; // a task "running" this long was cut off by an orchestrator restart
+// A task still "running" this long has really failed (a crash, or the orchestrator restarted): show it as failed,
+// not a spinner. Agent commands finish in seconds; the browser agent is capped at 120s, so 3 min is safely past.
+const STUCK_MS = 3 * 60 * 1000;
 
 const STATES = {
   running: { mark: 'running', text: 'Running' },
@@ -14,15 +16,14 @@ const STATES = {
   completed: { mark: 'ok', text: 'Done' },
   failed: { mark: 'fail', text: 'Failed' },
   cancelled: { mark: 'neutral', text: 'Cancelled' },
-  interrupted: { mark: 'neutral', text: 'Interrupted' },
   expired: { mark: 'neutral', text: 'Question expired' },
 };
 
 function stateOf(t) {
   if (FINAL.has(t.status)) return t.status;
-  const old = Date.now() - t.created > STALE_MS; // same 10 minutes as main.js's QUESTION_TTL_MS
-  if (t.status === 'needs_confirmation') return old ? 'expired' : 'waiting';
-  return old ? 'interrupted' : 'running';
+  const stuck = Date.now() - t.created > STUCK_MS;
+  if (t.status === 'needs_confirmation') return stuck ? 'expired' : 'waiting';
+  return stuck ? 'failed' : 'running'; // a task that never reached a terminal status has failed, not "running"
 }
 
 const clock = (t) => new Date(t.created).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -53,7 +54,8 @@ function row(t) {
   const body = el('span', 'task-main');
   body.append(el('span', 'task-title', t.transcript || '…'));
   const last = t.steps?.[t.steps.length - 1];
-  const sub = state === 'waiting' || state === 'expired' || FINAL.has(t.status) ? firstLine(t.response_text)
+  const sub = state === 'failed' && !FINAL.has(t.status) ? (firstLine(t.response_text) || 'Stopped before it finished')
+    : state === 'waiting' || state === 'expired' || FINAL.has(state) ? firstLine(t.response_text)
     : last ? `${stepLabel(last.action)}${last.detail ? ` — ${last.detail}` : ''}` : 'Starting…';
   body.append(el('span', 'task-sub', sub));
   const meta = el('span', 'task-meta');

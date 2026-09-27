@@ -53,8 +53,18 @@ def create_app(orchestrator: Orchestrator | None = None, settings: Settings | No
     settings = settings or (orchestrator.settings if orchestrator else get_settings())
     running: set[asyncio.Task] = set()  # background commands from POST /tasks; kept so they aren't garbage-collected
 
-    def spawn(coro) -> None:
-        task = asyncio.create_task(coro)
+    def spawn(coro, session_id: str) -> None:
+        async def guarded() -> None:
+            try:
+                await coro
+            except Exception:  # a background task must never end without a terminal status, or the UI spins forever
+                log.exception("background task %s crashed", session_id)
+                e = engine()
+                e.db.update_session_status(session_id, "failed",
+                                           response_text="Sorry, something went wrong while handling that.")
+                e.bus.publish("status", session_id=session_id, status="failed",
+                              response_text="Sorry, something went wrong while handling that.")
+        task = asyncio.create_task(guarded())
         running.add(task)
         task.add_done_callback(running.discard)
 
@@ -144,7 +154,7 @@ def create_app(orchestrator: Orchestrator | None = None, settings: Settings | No
     @app.post("/tasks", status_code=202, response_model=TaskAccepted)
     async def start_task(req: TranscriptRequest) -> dict:
         session_id = uuid.uuid4().hex
-        spawn(engine().handle_transcript(req.transcript, session_id=session_id))
+        spawn(engine().handle_transcript(req.transcript, session_id=session_id), session_id)
         return {"session_id": session_id, "status": "pending"}
 
     @app.post("/tasks/{session_id}/confirm", status_code=202, response_model=TaskAccepted)
@@ -154,7 +164,7 @@ def create_app(orchestrator: Orchestrator | None = None, settings: Settings | No
             raise HTTPException(404, "session not found")
         if found["status"] != "needs_confirmation":
             raise HTTPException(409, f"session is {found['status']}, nothing to confirm")
-        spawn(engine().confirm(session_id, req.approved))
+        spawn(engine().confirm(session_id, req.approved), session_id)
         return {"session_id": session_id, "status": "confirming"}
 
     @app.get("/sessions")
