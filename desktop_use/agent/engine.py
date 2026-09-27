@@ -44,6 +44,7 @@ class AgentEngine:
         messages: list[dict[str, Any]] = [{"role": "user", "content": user_message.strip()}]
         tool_results: list[dict[str, Any]] = []
         started = time.perf_counter()
+        nudged = False
 
         for _ in range(self.max_tool_rounds):
             response = await client.messages.create(
@@ -76,6 +77,14 @@ class AgentEngine:
             messages.append({"role": "assistant", "content": assistant_blocks})
 
             if response.stop_reason != "tool_use" or not tool_uses:
+                # The model sometimes narrates ("I'll open VS Code…") and stops without calling a tool, so
+                # nothing runs. If it has done nothing at all yet, nudge it once to actually act.
+                if not tool_results and not nudged:
+                    nudged = True
+                    messages.append({"role": "user", "content":
+                        "You only described what you would do — nothing has happened yet. Do it now by calling the "
+                        "tools. Do not reply with text until the actions are done."})
+                    continue
                 elapsed_ms = int((time.perf_counter() - started) * 1000)
                 return {
                     "summary": " ".join(final_text_parts).strip() or "Done.",
