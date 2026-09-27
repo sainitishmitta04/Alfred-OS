@@ -32,3 +32,24 @@ async def test_rejects_path_outside_sandbox(allowed_tmp, monkeypatch):
     monkeypatch.setenv("DESKTOP_FS_ALLOWED_DIRS", str(allowed_tmp))
     with pytest.raises(FilesystemError):
         await read_file("/etc/hosts")
+
+
+async def test_write_file_tolerates_shell_home_paths(tmp_path, monkeypatch):
+    """The model sometimes writes $(whoami)/$HOME in paths; the tool should resolve them, not reject them."""
+    import getpass
+
+    home = tmp_path
+    monkeypatch.setenv("HOME", str(home))
+    (home / "Desktop").mkdir()
+    monkeypatch.setenv("DESKTOP_FS_ALLOWED_DIRS", str(home / "Desktop"))
+
+    user = getpass.getuser()
+    # A shell-style path the way the model emits it; note it uses /Users/<user> which we redirect via HOME parts.
+    for raw in (f"$HOME/Desktop/a.md", f"${{HOME}}/Desktop/b.md"):
+        result = await write_file(raw, "hi")
+        assert "error" not in result, result
+
+    # $(whoami) is expanded to the real username (won't map to tmp_path, so just check it no longer stays literal).
+    from desktop_use.tools.filesystem import _expand_home
+    assert "$(whoami)" not in _expand_home("/Users/$(whoami)/Desktop/x.md")
+    assert user in _expand_home("/Users/$(whoami)/Desktop/x.md")

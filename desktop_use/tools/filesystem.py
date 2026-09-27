@@ -27,10 +27,22 @@ def _allowed_roots() -> list[Path]:
     return existing or roots
 
 
+def _expand_home(path_str: str) -> str:
+    """The model often writes shell-style home paths (`$(whoami)`, `$HOME`, `$USER`) that these tools don't run
+    through a shell. Resolve the common ones to the real home so a good path isn't rejected as literal text."""
+    import getpass
+
+    user = getpass.getuser()
+    text = os.path.expandvars(path_str)                       # $HOME, ${HOME}, $USER, ${USER}
+    for token in ("$(whoami)", "`whoami`", "${whoami}", "$(id -un)"):
+        text = text.replace(token, user)
+    return text
+
+
 def _resolve_allowed(path_str: str) -> Path:
     if not path_str or not str(path_str).strip():
         raise FilesystemError("path is required")
-    target = Path(str(path_str).strip()).expanduser()
+    target = Path(_expand_home(str(path_str).strip())).expanduser()
     if not target.is_absolute():
         raise FilesystemError("path must be absolute")
     resolved = target.resolve()

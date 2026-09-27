@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import time
+from pathlib import Path
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -41,6 +42,13 @@ class AgentEngine:
             raise RuntimeError("anthropic package is required. Run: uv pip install anthropic") from error
 
         client = AsyncAnthropic(api_key=self.api_key)
+        # Tell the model the real home and allowed folders so it writes correct absolute paths instead of
+        # guessing ($(whoami), /Users/Alfred, ...) and wasting a round on a rejected path.
+        from desktop_use.tools.filesystem import _allowed_roots
+
+        roots = ", ".join(str(r) for r in _allowed_roots())
+        system_prompt = f"{ALFRED_SYSTEM_PROMPT}\nThe user's home folder is {Path.home()}. Write files only under " \
+                        f"these exact absolute directories: {roots}."
         messages: list[dict[str, Any]] = [{"role": "user", "content": user_message.strip()}]
         tool_results: list[dict[str, Any]] = []
         started = time.perf_counter()
@@ -50,7 +58,7 @@ class AgentEngine:
             response = await client.messages.create(
                 model=self.model,
                 max_tokens=512,
-                system=ALFRED_SYSTEM_PROMPT,
+                system=system_prompt,
                 tools=TOOL_DEFINITIONS,
                 messages=messages,
             )
